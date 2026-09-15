@@ -13,12 +13,13 @@ from acestep.pipeline_ace_step import ACEStepPipeline
 from audio_engine import export_mp3, master_audio
 from lyric_engine import LyricRequest, compose_lyrics, unload_model
 from seo_engine import build_seo
+from package_engine import build_package
 
 API_KEY=os.getenv("LAXMAN_LOFI_API_KEY","")
 CHECKPOINT_DIR=os.getenv("ACE_CHECKPOINT_DIR","/content/ace-checkpoints")
 DEVICE_ID=int(os.getenv("ACE_DEVICE_ID","0")); BF16=os.getenv("ACE_BF16","true").lower()=="true"
 OUTPUT_DIR=Path(os.getenv("LAXMAN_LOFI_OUTPUT_DIR","/content/laxman_lofi_output"))
-app=FastAPI(title="Laxman Lofi AI Studio API",version="1.4.0")
+app=FastAPI(title="Laxman Lofi AI Studio API",version="2.0.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 pipeline=None
 class ComposeRequest(BaseModel):
@@ -31,6 +32,8 @@ class SEORequest(BaseModel):
  title:str=Field(min_length=1,max_length=200); story:str=Field(default="",max_length=2000); lyrics:str=Field(default="",max_length=8000); mood:str=Field(default="emotional",max_length=50); language:str=Field(default="Nepali",max_length=30)
 class CoverRequest(BaseModel):
  prompt:str=Field(min_length=3,max_length=1500); seed:int|None=None
+class PackageRequest(BaseModel):
+ output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); metadata:dict={}; seo:dict|None=None; cover_base64:str|None=None
 def check_key(authorization:str|None):
  if API_KEY and authorization!=f"Bearer {API_KEY}": raise HTTPException(status_code=401,detail="Invalid API key")
 def load_pipeline():
@@ -41,7 +44,7 @@ def load_pipeline():
 def source_path(output_id:str)->Path:return OUTPUT_DIR/f"{output_id}.wav"
 def master_paths(output_id:str)->tuple[Path,Path]:return OUTPUT_DIR/f"{output_id}_master.wav",OUTPUT_DIR/f"{output_id}_master.mp3"
 @app.get("/health")
-def health():return {"status":"healthy","version":"1.4.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl"}
+def health():return {"status":"healthy","version":"2.0.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","package_export":"zip"}
 @app.post("/compose")
 def compose(req:ComposeRequest,authorization:str|None=Header(default=None)):
  check_key(authorization)
@@ -87,3 +90,11 @@ def cover(req:CoverRequest,authorization:str|None=Header(default=None)):
   return {"status":"success","image_base64":image_base64,"mime_type":"image/png","width":1024,"height":576,"seed":seed,"model":os.getenv("COVER_MODEL_ID","stabilityai/stable-diffusion-xl-base-1.0"),"originality_note":"AI-generated cover draft. Review before publishing."}
  except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Cover generation failed: {exc}") from exc
+@app.post("/package")
+def package(req:PackageRequest,authorization:str|None=Header(default=None)):
+ check_key(authorization)
+ try:
+  package_base64,filename=build_package(OUTPUT_DIR,req.output_id,req.title,req.metadata,req.seo,req.cover_base64)
+  return {"status":"success","filename":filename,"mime_type":"application/zip","package_base64":package_base64}
+ except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
+ except Exception as exc:raise HTTPException(status_code=500,detail=f"Package export failed: {exc}") from exc
