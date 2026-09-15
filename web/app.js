@@ -14,7 +14,7 @@ $('newBtn').onclick=()=>{ $('result').classList.add('hidden'); $('audio').remove
 $('formatBtn').onclick=()=>{ const lyrics=$('lyrics').value.trim(); if(!lyrics)return; if(!/^\[verse\]/im.test(lyrics))$('lyrics').value='[verse]\n'+lyrics; if(!/\[chorus\]/im.test($('lyrics').value))$('lyrics').value+='\n\n[chorus]\n'; };
 
 async function health(){ const url=getApi(); if(!url){setState(false);return;} try{const r=await fetch(`${url}/health`,{headers:authHeaders()});setState(r.ok);}catch{setState(false);} }
-function stylePrompt(){ const bpm={slow:'65–75 BPM',mid:'75–85 BPM',upbeat:'85–100 BPM'}[$('tempo').value]; const vocal=$('voice').value==='instrumental'?'instrumental only':`${$('voice').value} vocal`; return `${$('style').value}, ${selectedMood} mood, ${bpm}, ${vocal}, ${$('language').value} music, original composition, intimate late-night lofi production`; }
+function stylePrompt(){ const bpm={slow:'65–75 BPM',mid:'75–85 BPM',upbeat:'85–100 BPM'}[$('tempo').value]; const vocal=$('voice').value==='instrumental'?'instrumental only':`${$('voice').value} vocal`; const idea=$('idea').value.trim(); return `${idea ? `Song story: ${idea}. ` : ''}${$('style').value}, ${selectedMood} mood, ${bpm}, ${vocal}, ${$('language').value} music, original composition, intimate late-night lofi production`; }
 
 $('generateBtn').onclick=async()=>{
   const api=getApi(); if(!api){$('settingsDialog').showModal();return;}
