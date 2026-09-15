@@ -2,44 +2,48 @@
 
 Original-first Nepali music creation system for **Laxman Lofi**.
 
-## V1 architecture
+## V1.1 — Story → AI Lyrics → Music
 
 - **Frontend:** static, mobile-first web app in `web/`
-- **Generation engine:** ACE-Step v1 3.5B (`ACE-Step/ACE-Step-v1-3.5B`), an Apache-2.0 checkpoint
+- **Lyric AI:** local Hugging Face Transformers model, default `ministral/Ministral-3b-instruct`
+- **Music engine:** ACE-Step v1 3.5B (`ACE-Step/ACE-Step-v1-3.5B`)
 - **Cloud runner:** Google Colab notebook in `backend/`
-- **API contract:** frontend sends a generation request to a user-controlled ACE-Step API endpoint
-- **No API key is hard-coded into the repository**
+- **API:** one user-controlled FastAPI server for `/compose` and `/generate`
+- **VRAM strategy:** lyric model is unloaded before ACE-Step generation so the two models do not need to occupy the GPU simultaneously
 
-ACE-Step v1 supports text-to-music, structured lyrics, vocals, multiple languages, and audio durations suitable for original song production. The official v1 checkpoint is listed as Apache 2.0. Always verify the current model card and applicable law before commercial distribution.
+The current Hugging Face model cards list both the default Ministral 3B lyric model and ACE-Step v1 3.5B as Apache-2.0. ACE-Step v1 is documented as a text-to-music model with structured lyrics/vocal generation. Always verify the current model cards, model components, applicable law, and YouTube policies before commercial distribution.
 
-## Important licensing note
+## How it works
 
-This project deliberately targets **ACE-Step v1**, not ACE-Step 1.5, for the first commercial-oriented prototype. The current 1.5 ecosystem has additional restrictions around commercial hosted generation and commercial output verification, so it is not the default engine for this project.
+1. Enter a story such as a migrant-worker, relationship, rain, mother, hometown, or night-shift experience.
+2. Select mood, language, vocal type, duration and production style.
+3. Click **✨ Create AI lyrics**.
+4. Edit the generated title/lyrics if needed.
+5. Click **Generate song**.
+6. The backend uses ACE-Step to render the audio and returns a WAV file.
 
-The model license does not guarantee that every generated work is copyrightable or free from similarity claims. Use original prompts/lyrics, do not imitate living artists, and keep a generation record (prompt, lyrics, seed, model version, date).
+The system does **not** silently invent a fake demo result. The AI lyric endpoint is real model inference and the music endpoint is real ACE-Step inference.
 
-## V1 workflow
+## Important originality / licensing note
 
-1. Open the static frontend.
-2. Enter a story or idea in Nepali/English.
-3. Select mood, language, vocal/instrumental, duration and style.
-4. Paste original lyrics or use your own lyric-writing workflow.
-5. Generate through your own Colab/local ACE-Step server.
-6. Review the result for originality before publishing.
+An Apache-2.0 model license does not guarantee that every generated output is copyrightable, unique, or free of similarity claims. Use original stories/prompts, review generated lyrics and audio, avoid requests to imitate named artists or existing songs, and keep generation metadata such as model version, prompt, lyrics and seed.
+
+## Colab
+
+Open `backend/Laxman_Lofi_AI_Studio_Colab.ipynb` in Google Colab with a GPU. The notebook installs the lyric-model dependencies, ACE-Step, starts the API and exposes it through a temporary Cloudflare quick tunnel.
+
+For a permanent production service, move the backend to a GPU host you control and protect the API with `LAXMAN_LOFI_API_KEY`.
 
 ## Suggested deployment
 
-Host `web/` on your existing static site, for example:
+Host `web/` at:
 
 `https://apps.laxmannepal.com.np/laxman-lofi/`
 
-Run the Colab notebook, expose the API temporarily, then set the API URL in the app's Settings panel. For a permanent public service, move the model to a GPU host you control and keep the API protected.
-
 ## Roadmap
 
-- V1: working generation dashboard + ACE-Step API connector
-- V1.1: Nepali lyric helper + prompt builder
+- V1.1: AI lyric generation + prompt builder ✅
 - V1.2: generation history + metadata/seed export
-- V1.3: audio mastering and MP3/WAV packaging
+- V1.3: audio mastering + MP3/WAV packaging
 - V1.4: cover-art generator + YouTube SEO pack
-- V2: one-click "Story → Lyrics → Song → Cover → YouTube package"
+- V2: one-click Story → Lyrics → Song → Cover → YouTube package
