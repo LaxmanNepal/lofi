@@ -15,14 +15,14 @@
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <main class="shell">
     <header class="topbar glass">
-      <div class="brand"><div class="brand-mark">♫</div><div><strong>Laxman Lofi</strong><span>AI Studio · V1.2</span></div></div>
+      <div class="brand"><div class="brand-mark">♫</div><div><strong>Laxman Lofi</strong><span>AI Studio · V1.3</span></div></div>
       <div class="top-actions"><button id="historyBtn" class="small-btn">History</button><button id="settingsBtn" class="icon-btn" title="Settings">⚙</button></div>
     </header>
 
     <section class="hero">
       <div class="eyebrow">ORIGINAL MUSIC WORKSPACE</div>
       <h1>भन्न नसकेको कुरा,<br><span>संगीतमा।</span></h1>
-      <p>Story → AI lyrics → original music → saved generation record.</p>
+      <p>Story → AI lyrics → original music → master → MP3/WAV export.</p>
     </section>
 
     <section class="grid">
@@ -65,7 +65,19 @@
       <div class="panel-head"><div><span class="step">05</span><h2 id="resultTitle">Your generation</h2></div><button id="newBtn" class="small-btn">New song</button></div>
       <audio id="audio" controls></audio>
       <div class="meta-grid"><div><small>Seed</small><strong id="seed">—</strong></div><div><small>Duration</small><strong id="metaDuration">—</strong></div><div><small>Music model</small><strong>ACE-Step v1</strong></div></div>
-      <div class="result-actions"><a id="download" class="download" download="laxman-lofi.wav">Download WAV</a><button id="saveMetadata" class="small-btn">Export metadata</button><button id="copyPrompt" class="small-btn">Copy prompt</button></div>
+
+      <div class="master-box">
+        <div class="master-head"><div><span class="step">MASTER</span><h3>Make it YouTube-ready</h3></div><span id="masterState" class="status offline">Not mastered</span></div>
+        <p>Creates a 44.1 kHz 24-bit WAV master and a 320 kbps MP3 using server-side FFmpeg. Target is approximately −14 LUFS / −1 dBTP; platform playback normalization can vary.</p>
+        <div class="master-controls">
+          <label>Fade in <select id="fadeIn"><option value="0">None</option><option value="1">1 sec</option><option value="2" selected>2 sec</option><option value="3">3 sec</option><option value="5">5 sec</option></select></label>
+          <label>Fade out <select id="fadeOut"><option value="0">None</option><option value="1">1 sec</option><option value="2">2 sec</option><option value="3" selected>3 sec</option><option value="5">5 sec</option><option value="8">8 sec</option></select></label>
+          <button id="masterBtn" class="generate-btn"><span>Master audio</span><b>→</b></button>
+        </div>
+        <div id="masterLinks" class="result-actions hidden"><a id="masterWav" class="download" download>Master WAV</a><a id="masterMp3" class="download" download>MP3 · 320 kbps</a></div>
+      </div>
+
+      <div class="result-actions"><a id="download" class="download" download="laxman-lofi.wav">Download original WAV</a><button id="saveMetadata" class="small-btn">Export metadata</button><button id="copyPrompt" class="small-btn">Copy prompt</button></div>
       <div class="hint">Generation metadata includes your story, lyrics, prompt, model, seed and timestamp. Keep it with the audio as your creation record.</div>
     </section>
 
@@ -81,7 +93,7 @@
   <dialog id="settingsDialog" class="settings glass"><form method="dialog">
     <div class="panel-head"><h2>Generation server</h2><button class="icon-btn">×</button></div>
     <label>ACE-Step API URL</label><input id="apiUrl" placeholder="https://your-colab-endpoint.example" />
-    <p class="hint">Run the included Colab notebook and paste its public API URL here. The lyric AI and music engine share this server.</p>
+    <p class="hint">Run the included Colab notebook and paste its public API URL here. The lyric AI, music engine and mastering run on this server.</p>
     <label>API key <span class="optional">optional</span></label><input id="apiKey" type="password" placeholder="Leave blank if disabled" />
     <button id="saveSettings" class="generate-btn" value="default">Save settings</button>
   </form></dialog>
