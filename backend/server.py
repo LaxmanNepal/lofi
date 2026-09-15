@@ -25,7 +25,6 @@ app = FastAPI(title="Laxman Lofi AI Studio API", version="1.3.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 pipeline = None
 
-
 class ComposeRequest(BaseModel):
     idea: str = Field(min_length=3, max_length=1000)
     mood: str = Field(default="emotional", max_length=50)
@@ -33,7 +32,6 @@ class ComposeRequest(BaseModel):
     voice: str = Field(default="male", max_length=20)
     duration: int = Field(default=180, ge=30, le=300)
     style: str = Field(default="warm piano, mellow guitar, dusty vinyl texture", max_length=500)
-
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(min_length=3, max_length=3000)
@@ -44,18 +42,15 @@ class GenerateRequest(BaseModel):
     language: str = "nepali"
     seed: int | None = None
 
-
 class MasterRequest(BaseModel):
     output_id: str = Field(min_length=8, max_length=100, pattern=r"^[A-Za-z0-9_-]+$")
     duration: float = Field(default=180, ge=10, le=300)
     fade_in: float = Field(default=2, ge=0, le=10)
     fade_out: float = Field(default=3, ge=0, le=10)
 
-
 def check_key(authorization: str | None):
     if API_KEY and authorization != f"Bearer {API_KEY}":
         raise HTTPException(status_code=401, detail="Invalid API key")
-
 
 def load_pipeline():
     global pipeline
@@ -65,19 +60,15 @@ def load_pipeline():
         pipeline = ACEStepPipeline(checkpoint_dir=CHECKPOINT_DIR, dtype="bfloat16" if BF16 else "float32", torch_compile=False)
     return pipeline
 
-
 def source_path(output_id: str) -> Path:
     return OUTPUT_DIR / f"{output_id}.wav"
-
 
 def master_paths(output_id: str) -> tuple[Path, Path]:
     return OUTPUT_DIR / f"{output_id}_master.wav", OUTPUT_DIR / f"{output_id}_master.mp3"
 
-
 @app.get("/health")
 def health():
     return {"status": "healthy", "model": "ACE-Step v1 3.5B", "lyric_model": os.getenv("LYRIC_MODEL_ID", "ministral/Ministral-3b-instruct"), "cuda": torch.cuda.is_available(), "audio_mastering": "ffmpeg"}
-
 
 @app.post("/compose")
 def compose(req: ComposeRequest, authorization: str | None = Header(default=None)):
@@ -89,14 +80,12 @@ def compose(req: ComposeRequest, authorization: str | None = Header(default=None
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Lyric AI failed: {exc}") from exc
 
-
 @app.post("/generate")
 def generate(req: GenerateRequest, authorization: str | None = Header(default=None)):
     check_key(authorization)
     lyrics = "[inst]" if req.voice_mode == "instrumental" else req.lyrics.strip()
     if req.voice_mode != "instrumental" and not lyrics:
         raise HTTPException(status_code=400, detail="Original lyrics are required for vocal generation.")
-
     unload_model()
     seed = req.seed if req.seed is not None else random.randint(1, 2_147_483_647)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -110,10 +99,8 @@ def generate(req: GenerateRequest, authorization: str | None = Header(default=No
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         raise HTTPException(status_code=500, detail=f"ACE-Step generation failed: {exc}") from exc
-
     audio_bytes = output_path.read_bytes()
     return {"status": "success", "audio_base64": base64.b64encode(audio_bytes).decode("ascii"), "mime_type": "audio/wav", "seed": seed, "duration": req.audio_duration, "model": "ACE-Step v1 3.5B", "output_id": output_id}
-
 
 @app.get("/audio/{file_name}")
 def audio(file_name: str, authorization: str | None = Header(default=None)):
@@ -125,7 +112,6 @@ def audio(file_name: str, authorization: str | None = Header(default=None)):
         raise HTTPException(status_code=404, detail="Audio file not found. The Colab runtime may have expired.")
     media = "audio/mpeg" if path.suffix.lower() == ".mp3" else "audio/wav"
     return FileResponse(path, media_type=media, filename=path.name)
-
 
 @app.post("/master")
 def master(req: MasterRequest, authorization: str | None = Header(default=None)):
@@ -139,4 +125,19 @@ def master(req: MasterRequest, authorization: str | None = Header(default=None))
         export_mp3(master_wav, master_mp3)
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"status": "success", "output_id": req.output_id, "wav_url": f"/audio/{master_wav.name}", "mp3_url": f"/audio/{master_mp3.name}", "target": "approximately -14 LUFS / -1 dBTP", "sample_rate": 44100, "wav_bit_depth": 24, "mp3_bitrate": "320 kbps", "fade_in": req.fade_in, "fade_out": req.fade_out}
+    wav_bytes = master_wav.read_bytes()
+    mp3_bytes = master_mp3.read_bytes()
+    return {
+        "status": "success",
+        "output_id": req.output_id,
+        "wav_base64": base64.b64encode(wav_bytes).decode("ascii"),
+        "mp3_base64": base64.b64encode(mp3_bytes).decode("ascii"),
+        "wav_mime_type": "audio/wav",
+        "mp3_mime_type": "audio/mpeg",
+        "target": "approximately -14 LUFS / -1 dBTP",
+        "sample_rate": 44100,
+        "wav_bit_depth": 24,
+        "mp3_bitrate": "320 kbps",
+        "fade_in": req.fade_in,
+        "fade_out": req.fade_out,
+    }
