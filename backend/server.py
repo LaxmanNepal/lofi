@@ -18,12 +18,13 @@ from package_engine import build_package
 from stem_engine import separate_stems
 from video_engine import build_visualizer, file_base64
 from lyric_video_engine import build_lyric_video
+from timing_engine import time_lyrics
 
 API_KEY=os.getenv("LAXMAN_LOFI_API_KEY","")
 CHECKPOINT_DIR=os.getenv("ACE_CHECKPOINT_DIR","/content/ace-checkpoints")
 DEVICE_ID=int(os.getenv("ACE_DEVICE_ID","0")); BF16=os.getenv("ACE_BF16","true").lower()=="true"
 OUTPUT_DIR=Path(os.getenv("LAXMAN_LOFI_OUTPUT_DIR","/content/laxman_lofi_output"))
-app=FastAPI(title="Laxman Lofi AI Studio API",version="3.2.0")
+app=FastAPI(title="Laxman Lofi AI Studio API",version="3.3.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 pipeline=None
 class ComposeRequest(BaseModel):
@@ -44,6 +45,8 @@ class PackageRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); metadata:dict={}; seo:dict|None=None; cover_base64:str|None=None
 class VideoRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); cover_base64:str|None=None; overlay_title:bool=True; show_waveform:bool=True
+class TimingRequest(BaseModel):
+ output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); lyrics:str=Field(min_length=1,max_length=12000); model_size:str=Field(default="small",max_length=30); language:str|None=None
 class LyricVideoRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); lyrics:str=Field(min_length=1,max_length=12000); cover_base64:str|None=None; theme:str=Field(default="night",pattern=r"^(night|warm|minimal|nepal)$"); karaoke:bool=True; intro_seconds:float=Field(default=2,ge=0,le=10); outro_seconds:float=Field(default=2,ge=0,le=10); waveform:bool=True
 def check_key(authorization:str|None):
@@ -61,7 +64,7 @@ def video_path(output_id:str)->Path:return OUTPUT_DIR/"videos"/f"{output_id}.mp4
 def lyric_video_path(output_id:str)->Path:return OUTPUT_DIR/"videos"/f"{output_id}-lyrics.mp4"
 def audio_b64(path:Path)->str:return base64.b64encode(path.read_bytes()).decode("ascii")
 @app.get("/health")
-def health():return {"status":"healthy","version":"3.2.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","lyric_video":"ffmpeg+ass","package_export":"zip"}
+def health():return {"status":"healthy","version":"3.3.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","lyric_video":"ffmpeg+ass","lyric_timing":"faster-whisper","package_export":"zip"}
 @app.post("/compose")
 def compose(req:ComposeRequest,authorization:str|None=Header(default=None)):
  check_key(authorization)
@@ -98,8 +101,7 @@ def stems(req:StemRequest,authorization:str|None=Header(default=None)):
  check_key(authorization); source=source_path(req.output_id)
  if not source.is_file():raise HTTPException(status_code=404,detail="Source audio not found. Generate the song again if the runtime expired.")
  try:
-  paths=separate_stems(source,OUTPUT_DIR/"stems"/req.output_id,req.model)
-  return {"status":"success","output_id":req.output_id,"model":req.model,"stems":{name:{"file_name":path.name,"mime_type":"audio/wav","audio_base64":audio_b64(path)} for name,path in paths.items()}}
+  paths=separate_stems(source,OUTPUT_DIR/"stems"/req.output_id,req.model); return {"status":"success","output_id":req.output_id,"model":req.model,"stems":{name:{"file_name":path.name,"mime_type":"audio/wav","audio_base64":audio_b64(path)} for name,path in paths.items()}}
  except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
  except RuntimeError as exc:raise HTTPException(status_code=500,detail=str(exc)) from exc
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Stem separation failed: {exc}") from exc
@@ -109,8 +111,7 @@ def stem_mix(req:StemMixRequest,authorization:str|None=Header(default=None)):
  if not vocals.is_file() or not instrumental.is_file():raise HTTPException(status_code=404,detail="Separate vocals and instrumental stems first.")
  out=stem_dir(req.output_id)/"custom_mix.wav"
  try:
-  vpan=max(-1.0,min(1.0,req.vocal_pan)); left=1.0-vpan if vpan>=0 else 1.0; right=1.0+vpan if vpan<=0 else 1.0
-  filter_complex=f"[0:a]volume={req.vocal_gain:g},pan=stereo|c0={left:g}*c0|c1={right:g}*c1[v];[1:a]volume={req.instrumental_gain:g}[i];[v][i]amix=inputs=2:duration=longest:normalize=0[a]"
+  vpan=max(-1.0,min(1.0,req.vocal_pan)); left=1.0-vpan if vpan>=0 else 1.0; right=1.0+vpan if vpan<=0 else 1.0; filter_complex=f"[0:a]volume={req.vocal_gain:g},pan=stereo|c0={left:g}*c0|c1={right:g}*c1[v];[1:a]volume={req.instrumental_gain:g}[i];[v][i]amix=inputs=2:duration=longest:normalize=0[a]"
   subprocess.run(["ffmpeg","-y","-i",str(vocals),"-i",str(instrumental),"-filter_complex",filter_complex,"-map","[a]","-ar","44100","-ac","2","-c:a","pcm_s24le",str(out)],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
   return {"status":"success","file_name":out.name,"mime_type":"audio/wav","audio_base64":audio_b64(out),"vocal_gain":req.vocal_gain,"instrumental_gain":req.instrumental_gain,"vocal_pan":req.vocal_pan}
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Custom stem mix failed: {exc}") from exc
@@ -124,8 +125,7 @@ def cover(req:CoverRequest,authorization:str|None=Header(default=None)):
  check_key(authorization)
  try:
   from cover_engine import generate_cover
-  image_base64,seed=generate_cover(req.prompt,req.seed)
-  return {"status":"success","image_base64":image_base64,"mime_type":"image/png","width":1024,"height":576,"seed":seed,"model":os.getenv("COVER_MODEL_ID","stabilityai/stable-diffusion-xl-base-1.0"),"originality_note":"AI-generated cover draft. Review before publishing."}
+  image_base64,seed=generate_cover(req.prompt,req.seed); return {"status":"success","image_base64":image_base64,"mime_type":"image/png","width":1024,"height":576,"seed":seed,"model":os.getenv("COVER_MODEL_ID","stabilityai/stable-diffusion-xl-base-1.0"),"originality_note":"AI-generated cover draft. Review before publishing."}
  except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Cover generation failed: {exc}") from exc
 @app.post("/video")
@@ -139,11 +139,17 @@ def video(req:VideoRequest,authorization:str|None=Header(default=None)):
  if not cover_path.is_file():raise HTTPException(status_code=400,detail="Generate or provide cover art first.")
  out=video_path(req.output_id)
  try:
-  build_visualizer(source,cover_path,out,req.title,overlay_title=req.overlay_title,show_waveform=req.show_waveform)
-  return {"status":"success","output_id":req.output_id,"file_name":out.name,"mime_type":"video/mp4","width":1920,"height":1080,"video_base64":file_base64(out),"codec":"H.264 + AAC","youtube_ready":True}
+  build_visualizer(source,cover_path,out,req.title,overlay_title=req.overlay_title,show_waveform=req.show_waveform); return {"status":"success","output_id":req.output_id,"file_name":out.name,"mime_type":"video/mp4","width":1920,"height":1080,"video_base64":file_base64(out),"codec":"H.264 + AAC","youtube_ready":True}
  except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
  except RuntimeError as exc:raise HTTPException(status_code=500,detail=str(exc)) from exc
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Video export failed: {exc}") from exc
+@app.post("/lyric-timing")
+def lyric_timing(req:TimingRequest,authorization:str|None=Header(default=None)):
+ check_key(authorization); source=source_path(req.output_id)
+ if not source.is_file():raise HTTPException(status_code=404,detail="Source audio not found.")
+ try:return time_lyrics(source,req.lyrics,300,req.model_size,req.language)
+ except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
+ except Exception as exc:raise HTTPException(status_code=500,detail=f"ASR timing failed: {exc}") from exc
 @app.post("/lyric-video")
 def lyric_video(req:LyricVideoRequest,authorization:str|None=Header(default=None)):
  check_key(authorization); source=source_path(req.output_id)
@@ -164,7 +170,6 @@ def lyric_video(req:LyricVideoRequest,authorization:str|None=Header(default=None
 def package(req:PackageRequest,authorization:str|None=Header(default=None)):
  check_key(authorization)
  try:
-  package_base64,filename=build_package(OUTPUT_DIR,req.output_id,req.title,req.metadata,req.seo,req.cover_base64)
-  return {"status":"success","filename":filename,"mime_type":"application/zip","package_base64":package_base64}
+  package_base64,filename=build_package(OUTPUT_DIR,req.output_id,req.title,req.metadata,req.seo,req.cover_base64); return {"status":"success","filename":filename,"mime_type":"application/zip","package_base64":package_base64}
  except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Package export failed: {exc}") from exc
