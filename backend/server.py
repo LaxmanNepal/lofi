@@ -3,6 +3,7 @@ import os
 import random
 import re
 import time
+import subprocess
 from pathlib import Path
 import torch
 from fastapi import FastAPI, Header, HTTPException
@@ -35,6 +36,8 @@ class CoverRequest(BaseModel):
  prompt:str=Field(min_length=3,max_length=1500); seed:int|None=None
 class StemRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); model:str=Field(default="htdemucs",max_length=50)
+class StemMixRequest(BaseModel):
+ output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); vocal_gain:float=Field(default=1.0,ge=0,le=2); instrumental_gain:float=Field(default=1.0,ge=0,le=2); vocal_pan:float=Field(default=0,ge=-1,le=1)
 class PackageRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); metadata:dict={}; seo:dict|None=None; cover_base64:str|None=None
 def check_key(authorization:str|None):
@@ -46,6 +49,9 @@ def load_pipeline():
  return pipeline
 def source_path(output_id:str)->Path:return OUTPUT_DIR/f"{output_id}.wav"
 def master_paths(output_id:str)->tuple[Path,Path]:return OUTPUT_DIR/f"{output_id}_master.wav",OUTPUT_DIR/f"{output_id}_master.mp3"
+def stem_dir(output_id:str)->Path:return OUTPUT_DIR/"stems"/output_id
+def stem_paths(output_id:str)->tuple[Path,Path]:return stem_dir(output_id)/"vocals.wav",stem_dir(output_id)/"instrumental.wav"
+def audio_b64(path:Path)->str:return base64.b64encode(path.read_bytes()).decode("ascii")
 @app.get("/health")
 def health():return {"status":"healthy","version":"2.2.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","package_export":"zip"}
 @app.post("/compose")
@@ -63,7 +69,7 @@ def generate(req:GenerateRequest,authorization:str|None=Header(default=None)):
  except Exception as exc:
   if torch.cuda.is_available():torch.cuda.empty_cache()
   raise HTTPException(status_code=500,detail=f"ACE-Step generation failed: {exc}") from exc
- return {"status":"success","audio_base64":base64.b64encode(output_path.read_bytes()).decode("ascii"),"mime_type":"audio/wav","seed":seed,"duration":req.audio_duration,"model":"ACE-Step v1 3.5B","output_id":output_id}
+ return {"status":"success","audio_base64":audio_b64(output_path),"mime_type":"audio/wav","seed":seed,"duration":req.audio_duration,"model":"ACE-Step v1 3.5B","output_id":output_id}
 @app.get("/audio/{file_name}")
 def audio(file_name:str,authorization:str|None=Header(default=None)):
  check_key(authorization)
@@ -78,20 +84,28 @@ def master(req:MasterRequest,authorization:str|None=Header(default=None)):
  master_wav,master_mp3=master_paths(req.output_id)
  try:master_audio(source,master_wav,req.duration,req.fade_in,req.fade_out); export_mp3(master_wav,master_mp3)
  except RuntimeError as exc:raise HTTPException(status_code=500,detail=str(exc)) from exc
- return {"status":"success","output_id":req.output_id,"wav_base64":base64.b64encode(master_wav.read_bytes()).decode("ascii"),"mp3_base64":base64.b64encode(master_mp3.read_bytes()).decode("ascii"),"wav_mime_type":"audio/wav","mp3_mime_type":"audio/mpeg","target":"approximately -14 LUFS / -1 dBTP","sample_rate":44100,"wav_bit_depth":24,"mp3_bitrate":"320 kbps","fade_in":req.fade_in,"fade_out":req.fade_out}
+ return {"status":"success","output_id":req.output_id,"wav_base64":audio_b64(master_wav),"mp3_base64":audio_b64(master_mp3),"wav_mime_type":"audio/wav","mp3_mime_type":"audio/mpeg","target":"approximately -14 LUFS / -1 dBTP","sample_rate":44100,"wav_bit_depth":24,"mp3_bitrate":"320 kbps","fade_in":req.fade_in,"fade_out":req.fade_out}
 @app.post("/stems")
 def stems(req:StemRequest,authorization:str|None=Header(default=None)):
  check_key(authorization); source=source_path(req.output_id)
  if not source.is_file():raise HTTPException(status_code=404,detail="Source audio not found. Generate the song again if the runtime expired.")
  try:
-  paths=separate_stems(source,OUTPUT_DIR/"stems",req.model)
-  result={"status":"success","output_id":req.output_id,"model":req.model,"stems":{}}
-  for name,path in paths.items():
-   data=base64.b64encode(path.read_bytes()).decode("ascii"); result["stems"][name]={"file_name":path.name,"mime_type":"audio/wav","audio_base64":data}
-  return result
+  paths=separate_stems(source,OUTPUT_DIR/"stems"/req.output_id,req.model)
+  return {"status":"success","output_id":req.output_id,"model":req.model,"stems":{name:{"file_name":path.name,"mime_type":"audio/wav","audio_base64":audio_b64(path)} for name,path in paths.items()}}
  except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
  except RuntimeError as exc:raise HTTPException(status_code=500,detail=str(exc)) from exc
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Stem separation failed: {exc}") from exc
+@app.post("/stem-mix")
+def stem_mix(req:StemMixRequest,authorization:str|None=Header(default=None)):
+ check_key(authorization); vocals,instrumental=stem_paths(req.output_id)
+ if not vocals.is_file() or not instrumental.is_file():raise HTTPException(status_code=404,detail="Separate vocals and instrumental stems first.")
+ out=stem_dir(req.output_id)/"custom_mix.wav"
+ try:
+  vpan=max(-1.0,min(1.0,req.vocal_pan)); left=1.0-vpan if vpan>=0 else 1.0; right=1.0+vpan if vpan<=0 else 1.0
+  filter_complex=f"[0:a]volume={req.vocal_gain:g},pan=stereo|c0={left:g}*c0|c1={right:g}*c1[v];[1:a]volume={req.instrumental_gain:g}[i];[v][i]amix=inputs=2:duration=longest:normalize=0[a]"
+  subprocess.run(["ffmpeg","-y","-i",str(vocals),"-i",str(instrumental),"-filter_complex",filter_complex,"-map","[a]","-ar","44100","-ac","2","-c:a","pcm_s24le",str(out)],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+  return {"status":"success","file_name":out.name,"mime_type":"audio/wav","audio_base64":audio_b64(out),"vocal_gain":req.vocal_gain,"instrumental_gain":req.instrumental_gain,"vocal_pan":req.vocal_pan}
+ except Exception as exc:raise HTTPException(status_code=500,detail=f"Custom stem mix failed: {exc}") from exc
 @app.post("/seo")
 def seo(req:SEORequest,authorization:str|None=Header(default=None)):
  check_key(authorization)
