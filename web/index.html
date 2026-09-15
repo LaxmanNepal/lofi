@@ -15,14 +15,14 @@
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <main class="shell">
     <header class="topbar glass">
-      <div class="brand"><div class="brand-mark">♫</div><div><strong>Laxman Lofi</strong><span>AI Studio · V1.1</span></div></div>
-      <button id="settingsBtn" class="icon-btn" title="Settings">⚙</button>
+      <div class="brand"><div class="brand-mark">♫</div><div><strong>Laxman Lofi</strong><span>AI Studio · V1.2</span></div></div>
+      <div class="top-actions"><button id="historyBtn" class="small-btn">History</button><button id="settingsBtn" class="icon-btn" title="Settings">⚙</button></div>
     </header>
 
     <section class="hero">
       <div class="eyebrow">ORIGINAL MUSIC WORKSPACE</div>
       <h1>भन्न नसकेको कुरा,<br><span>संगीतमा।</span></h1>
-      <p>Story → AI lyrics → original music. Your Colab GPU does the generation.</p>
+      <p>Story → AI lyrics → original music → saved generation record.</p>
     </section>
 
     <section class="grid">
@@ -55,7 +55,7 @@
       </div>
 
       <div class="panel glass generate-panel">
-        <div class="generate-copy"><span class="step">04</span><h2>Generate original song</h2><p>AI lyrics are reviewed in the browser first, then sent to ACE-Step for music generation.</p></div>
+        <div class="generate-copy"><span class="step">04</span><h2>Generate original song</h2><p>Lyrics are reviewed in the browser first, then sent to ACE-Step for music generation.</p></div>
         <button id="generateBtn" class="generate-btn"><span>Generate song</span><b>→</b></button>
         <div id="progress" class="progress hidden"><div class="spinner"></div><span id="progressText">Working on your GPU server…</span></div>
       </div>
@@ -64,8 +64,15 @@
     <section id="result" class="panel glass result hidden">
       <div class="panel-head"><div><span class="step">05</span><h2 id="resultTitle">Your generation</h2></div><button id="newBtn" class="small-btn">New song</button></div>
       <audio id="audio" controls></audio>
-      <div class="meta-grid"><div><small>Seed</small><strong id="seed">—</strong></div><div><small>Duration</small><strong id="metaDuration">—</strong></div><div><small>Model</small><strong>ACE-Step v1</strong></div></div>
-      <a id="download" class="download" download="laxman-lofi.wav">Download WAV</a>
+      <div class="meta-grid"><div><small>Seed</small><strong id="seed">—</strong></div><div><small>Duration</small><strong id="metaDuration">—</strong></div><div><small>Music model</small><strong>ACE-Step v1</strong></div></div>
+      <div class="result-actions"><a id="download" class="download" download="laxman-lofi.wav">Download WAV</a><button id="saveMetadata" class="small-btn">Export metadata</button><button id="copyPrompt" class="small-btn">Copy prompt</button></div>
+      <div class="hint">Generation metadata includes your story, lyrics, prompt, model, seed and timestamp. Keep it with the audio as your creation record.</div>
+    </section>
+
+    <section id="historyPanel" class="panel glass history-panel hidden">
+      <div class="panel-head"><div><span class="step">06</span><h2>Generation history</h2></div><button id="clearHistory" class="small-btn">Clear</button></div>
+      <div id="historyList" class="history-list"></div>
+      <div id="historyEmpty" class="hint">No generations saved yet. Successful generations appear here automatically.</div>
     </section>
 
     <footer>Original-first music creation · Laxman Lofi</footer>
