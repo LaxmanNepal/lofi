@@ -10,3 +10,4 @@ bitsandbytes>=0.45
 diffusers>=0.31
 safetensors>=0.4
 Pillow>=10
+demucs>=4.0.1
