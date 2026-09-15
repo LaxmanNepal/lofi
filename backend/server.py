@@ -16,12 +16,13 @@ from lyric_engine import LyricRequest, compose_lyrics, unload_model
 from seo_engine import build_seo
 from package_engine import build_package
 from stem_engine import separate_stems
+from video_engine import build_visualizer, file_base64
 
 API_KEY=os.getenv("LAXMAN_LOFI_API_KEY","")
 CHECKPOINT_DIR=os.getenv("ACE_CHECKPOINT_DIR","/content/ace-checkpoints")
 DEVICE_ID=int(os.getenv("ACE_DEVICE_ID","0")); BF16=os.getenv("ACE_BF16","true").lower()=="true"
 OUTPUT_DIR=Path(os.getenv("LAXMAN_LOFI_OUTPUT_DIR","/content/laxman_lofi_output"))
-app=FastAPI(title="Laxman Lofi AI Studio API",version="2.2.0")
+app=FastAPI(title="Laxman Lofi AI Studio API",version="3.1.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 pipeline=None
 class ComposeRequest(BaseModel):
@@ -40,6 +41,8 @@ class StemMixRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); vocal_gain:float=Field(default=1.0,ge=0,le=2); instrumental_gain:float=Field(default=1.0,ge=0,le=2); vocal_pan:float=Field(default=0,ge=-1,le=1)
 class PackageRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); metadata:dict={}; seo:dict|None=None; cover_base64:str|None=None
+class VideoRequest(BaseModel):
+ output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); cover_base64:str|None=None; overlay_title:bool=True; show_waveform:bool=True
 def check_key(authorization:str|None):
  if API_KEY and authorization!=f"Bearer {API_KEY}": raise HTTPException(status_code=401,detail="Invalid API key")
 def load_pipeline():
@@ -51,9 +54,10 @@ def source_path(output_id:str)->Path:return OUTPUT_DIR/f"{output_id}.wav"
 def master_paths(output_id:str)->tuple[Path,Path]:return OUTPUT_DIR/f"{output_id}_master.wav",OUTPUT_DIR/f"{output_id}_master.mp3"
 def stem_dir(output_id:str)->Path:return OUTPUT_DIR/"stems"/output_id
 def stem_paths(output_id:str)->tuple[Path,Path]:return stem_dir(output_id)/"vocals.wav",stem_dir(output_id)/"instrumental.wav"
+def video_path(output_id:str)->Path:return OUTPUT_DIR/"videos"/f"{output_id}.mp4"
 def audio_b64(path:Path)->str:return base64.b64encode(path.read_bytes()).decode("ascii")
 @app.get("/health")
-def health():return {"status":"healthy","version":"2.2.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","package_export":"zip"}
+def health():return {"status":"healthy","version":"3.1.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","package_export":"zip"}
 @app.post("/compose")
 def compose(req:ComposeRequest,authorization:str|None=Header(default=None)):
  check_key(authorization)
@@ -120,6 +124,22 @@ def cover(req:CoverRequest,authorization:str|None=Header(default=None)):
   return {"status":"success","image_base64":image_base64,"mime_type":"image/png","width":1024,"height":576,"seed":seed,"model":os.getenv("COVER_MODEL_ID","stabilityai/stable-diffusion-xl-base-1.0"),"originality_note":"AI-generated cover draft. Review before publishing."}
  except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Cover generation failed: {exc}") from exc
+@app.post("/video")
+def video(req:VideoRequest,authorization:str|None=Header(default=None)):
+ check_key(authorization); source=source_path(req.output_id)
+ if not source.is_file():raise HTTPException(status_code=404,detail="Source audio not found.")
+ cover_path=OUTPUT_DIR/"videos"/f"{req.output_id}-cover.png"
+ if req.cover_base64:
+  try:cover_path.parent.mkdir(parents=True,exist_ok=True);cover_path.write_bytes(base64.b64decode(req.cover_base64))
+  except Exception as exc:raise HTTPException(status_code=400,detail="Invalid cover image data.") from exc
+ if not cover_path.is_file():raise HTTPException(status_code=400,detail="Generate or provide cover art first.")
+ out=video_path(req.output_id)
+ try:
+  build_visualizer(source,cover_path,out,req.title,overlay_title=req.overlay_title,show_waveform=req.show_waveform)
+  return {"status":"success","output_id":req.output_id,"file_name":out.name,"mime_type":"video/mp4","width":1920,"height":1080,"video_base64":file_base64(out),"codec":"H.264 + AAC","youtube_ready":True}
+ except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
+ except RuntimeError as exc:raise HTTPException(status_code=500,detail=str(exc)) from exc
+ except Exception as exc:raise HTTPException(status_code=500,detail=f"Video export failed: {exc}") from exc
 @app.post("/package")
 def package(req:PackageRequest,authorization:str|None=Header(default=None)):
  check_key(authorization)
