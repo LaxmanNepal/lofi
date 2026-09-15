@@ -2,7 +2,7 @@
 
 Original-first Nepali music creation system for **Laxman Lofi**.
 
-## V3.2 — Story → Lyrics → Music → Master → Stems → Cover → Video → Lyric Video → SEO → ZIP
+## V3.3 — Story → Lyrics → Music → Master → Stems → Cover → Video → Lyric Video → ASR Sync → SEO → ZIP
 
 - **Frontend:** static, mobile-first web app in `web/`
 - **Lyric AI:** local Hugging Face Transformers model
@@ -13,42 +13,31 @@ Original-first Nepali music creation system for **Laxman Lofi**.
 - **Cover art:** optional local SDXL generation on the Colab GPU
 - **YouTube video:** 1920×1080 H.264 + AAC visualizer video
 - **Lyric video:** FFmpeg + ASS subtitles with Nepali Devanagari support, karaoke-style highlighting, intro/outro fades and four visual themes
+- **Lyric synchronization:** faster-whisper ASR on the generated vocal, lyric-line matching, confidence metadata and editable browser timestamps
 - **YouTube SEO:** local AI-generated title, description, tags, hashtags and short share copy
 - **Release packaging:** server-side ZIP containing available audio, stems, artwork, SEO and metadata
 - **Reusable presets:** Pardeshi, Romantic, Rainy Night and Nepal Atmosphere, plus custom browser-saved presets
 - **Batch generation:** up to 20 stories, processed sequentially to avoid concurrent GPU overload
 - **Cloud runner:** Google Colab notebook in `backend/`
-- **API:** `/compose`, `/generate`, `/master`, `/stems`, `/stem-mix`, `/seo`, `/cover`, `/video`, `/lyric-video`, `/package`, `/audio/{file_name}`
+- **API:** `/compose`, `/generate`, `/master`, `/stems`, `/stem-mix`, `/seo`, `/cover`, `/video`, `/lyric-timing`, `/lyric-video`, `/package`, `/audio/{file_name}`
+
+### V3.3 lyric synchronization workflow
+
+After generating a vocal song, **Exact Lyric Sync Studio** can analyze the vocal with faster-whisper word timestamps, match those ASR segments against the original lyrics, and expose editable start/end times in the browser. Matched lines are marked `asr`; unmatched lines fall back to proportional estimates. This makes the synchronization ASR-assisted rather than pretending that every line is perfectly phoneme-aligned.
+
+The timing engine supports Nepali Devanagari, English and Hindi language selection and caches the Whisper model in memory for reuse during a Colab session.
 
 ### V3.2 lyric video workflow
 
-After generating a song and cover, **AI Lyric Video Engine** can render a 1080p MP4 with the lyrics burned into the video. It supports Devanagari typography, karaoke highlighting, animated cover motion, intro/outro fades and **Night, Warm, Minimal and Nepal** themes.
+After generating a song and cover, **AI Lyric Video Engine** renders a 1080p MP4 with lyrics burned into the video. It supports Devanagari typography, karaoke highlighting, animated cover motion, intro/outro fades and Night, Warm, Minimal and Nepal themes.
 
-Because ACE-Step generation currently returns plain lyrics rather than word-level timestamps, V3.2 uses **estimated line timing based on lyric length**. The UI clearly labels this timing as estimated; it is not phoneme-level transcription. A future timestamp editor can provide exact manual/ASR synchronization.
+### Originality / licensing
 
-### Release package
-
-The complete ZIP can contain:
-
-- Original WAV
-- Master WAV
-- 320 kbps MP3
-- Vocals WAV
-- Instrumental WAV
-- Custom mix WAV
-- AI cover PNG
-- `youtube-seo.json`
-- `youtube-description.txt`
-- `metadata.json`
-- `README.txt`
-
-## Originality / licensing
-
-A model license does not guarantee that every generated output is copyrightable, unique, or free of similarity claims. Use original stories/prompts, review generated lyrics/audio/art/stems, avoid requests to imitate named artists or existing songs, and keep generation metadata.
+A model license does not guarantee that every generated output is copyrightable, unique, or free of similarity claims. Use original stories/prompts, review generated lyrics/audio/art/stems/video, avoid requests to imitate named artists or existing songs, and keep generation metadata.
 
 ## Colab
 
-Open `backend/Laxman_Lofi_AI_Studio_Colab.ipynb` in Google Colab with a GPU. FFmpeg is used for mastering, video rendering and lyric-video rendering. Demucs is used for the optional stem workflow.
+Open `backend/Laxman_Lofi_AI_Studio_Colab.ipynb` in Google Colab with a GPU. FFmpeg is used for mastering, video rendering and lyric-video rendering. Demucs handles stems and faster-whisper handles optional ASR timing.
 
 For a permanent production service, use a GPU host you control and protect the API with `LAXMAN_LOFI_API_KEY`.
 
@@ -68,4 +57,5 @@ Host `web/` at `https://apps.laxmannepal.com.np/laxman-lofi/`.
 - V3: creator publishing automation ✅
 - V3.1: YouTube video builder ✅
 - V3.2: AI lyric video engine with estimated karaoke timing ✅
-- V3.3: editable lyric timing + ASR-assisted synchronization
+- V3.3: editable lyric timing + ASR-assisted synchronization ✅
+- V3.4: synchronized lyric-video rendering using reviewed timestamps
