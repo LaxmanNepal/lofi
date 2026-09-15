@@ -2,71 +2,55 @@
 
 Original-first Nepali music creation system for **Laxman Lofi**.
 
-## V2.1 — Story → Lyrics → Music → Master → Cover → SEO → ZIP + Batch
+## V2.2 — Story → Lyrics → Music → Master → Stems → Cover → SEO → ZIP
 
 - **Frontend:** static, mobile-first web app in `web/`
 - **Lyric AI:** local Hugging Face Transformers model
 - **Music engine:** ACE-Step v1 3.5B
 - **Audio production:** FFmpeg mastering
+- **Vocal + instrumental separation:** Demucs `htdemucs` on demand
+- **Vocal controls:** vocal level, instrumental level and vocal pan, with custom-mix WAV export
 - **Cover art:** optional local SDXL generation on the Colab GPU
 - **YouTube SEO:** local AI-generated title, description, tags, hashtags and short share copy
-- **Release packaging:** server-side ZIP containing available audio, artwork, SEO and metadata
+- **Release packaging:** server-side ZIP containing available audio, stems, artwork, SEO and metadata
 - **Reusable presets:** Pardeshi, Romantic, Rainy Night and Nepal Atmosphere, plus custom browser-saved presets
 - **Batch generation:** up to 20 stories, processed sequentially to avoid concurrent GPU overload
 - **Cloud runner:** Google Colab notebook in `backend/`
-- **API:** FastAPI endpoints `/compose`, `/generate`, `/master`, `/seo`, `/cover`, `/package`, and `/audio/{file_name}`
+- **API:** `/compose`, `/generate`, `/master`, `/stems`, `/stem-mix`, `/seo`, `/cover`, `/package`, `/audio/{file_name}`
 
-### V2.1 reusable presets
+### V2.2 stem workflow
 
-Presets capture the current mood, language, voice, duration, tempo, production style and optional story starter. The four built-in workflows are:
+After generating a song, **Vocal + Stem Studio** can run Demucs on the GPU and return separate `VOCALS.wav` and `INSTRUMENTAL.wav` files. The studio also provides vocal level, instrumental level and vocal pan controls. **Export custom mix WAV** renders the adjusted combination server-side.
 
-- 🇳🇵 **Pardeshi** — migrant life, home and family memories
-- ❤️ **Romantic** — incomplete love, distance and waiting
-- 🌧️ **Rainy Night** — rain, memories and late-night solitude
-- 🏔️ **Nepal Atmosphere** — Nepal/Hetauda/village-inspired ambience
+Stem separation is on-demand because it requires another neural model and GPU memory. Stems remain in the Colab output directory while the runtime is alive and are automatically included in the release ZIP when present.
 
-Use **Save current** to store up to 20 custom presets in the browser. No database or paid service is required.
+### Release package
 
-### V2.1 batch generation
-
-Enter one story per line and click **Generate batch**. The browser processes each story sequentially through the real `/compose` and `/generate` AI endpoints, shows each completed song immediately, provides a WAV download for each result, and saves the generation record to local history.
-
-Batch generation intentionally runs sequentially rather than sending 20 GPU jobs at once. This reduces the chance of CUDA/VRAM exhaustion on a Colab GPU. Maximum batch size is 20 stories per run.
-
-## V2 complete release package
-
-After generating a song, the studio can create one portable ZIP containing:
+The complete ZIP can contain:
 
 - Original WAV
-- Master WAV when mastering has been completed
-- 320 kbps MP3 when mastering has been completed
-- AI cover PNG when generated
+- Master WAV
+- 320 kbps MP3
+- Vocals WAV
+- Instrumental WAV
+- Custom mix WAV
+- AI cover PNG
 - `youtube-seo.json`
 - `youtube-description.txt`
 - `metadata.json`
 - `README.txt`
 
-The ZIP is generated server-side so the browser does not need a ZIP library. The cover image is sent to the server only for packaging; it is not stored in browser history.
+## V2.1 features
 
-## Workflow
-
-1. Choose a reusable preset or enter a story.
-2. For a single song, create and review original lyrics.
-3. Generate the song with ACE-Step.
-4. Master it to WAV/MP3.
-5. Generate optional cover art.
-6. Generate YouTube SEO.
-7. Click **Create complete ZIP**.
-8. Keep the package as the release record.
-9. For multiple songs, add one story per line and run **Generate batch**.
+Reusable presets capture mood, language, voice, duration, tempo, production style and optional story starter. Batch generation accepts one story per line and processes songs sequentially through the real AI endpoints, with a maximum of 20 stories per run.
 
 ## Originality / licensing
 
-A model license does not guarantee that every generated output is copyrightable, unique, or free of similarity claims. Use original stories/prompts, review generated lyrics/audio/art, avoid requests to imitate named artists or existing songs, and keep generation metadata.
+A model license does not guarantee that every generated output is copyrightable, unique, or free of similarity claims. Use original stories/prompts, review generated lyrics/audio/art/stems, avoid requests to imitate named artists or existing songs, and keep generation metadata.
 
 ## Colab
 
-Open `backend/Laxman_Lofi_AI_Studio_Colab.ipynb` in Google Colab with a GPU. Diffusers/Safetensors/Pillow are required for optional SDXL cover generation. ZIP packaging uses Python's standard library.
+Open `backend/Laxman_Lofi_AI_Studio_Colab.ipynb` in Google Colab with a GPU. The requirements install Demucs for the optional V2.2 stem workflow. FFmpeg is used for mastering and custom stem mixing.
 
 For a permanent production service, use a GPU host you control and protect the API with `LAXMAN_LOFI_API_KEY`.
 
@@ -82,5 +66,5 @@ Host `web/` at `https://apps.laxmannepal.com.np/laxman-lofi/`.
 - V1.4: cover-art generator + YouTube SEO pack ✅
 - V2.0: one-click complete release ZIP ✅
 - V2.1: batch generation + reusable presets ✅
-- V2.2: vocal controls + stem workflow
+- V2.2: vocal controls + stem workflow ✅
 - V3: creator publishing automation
