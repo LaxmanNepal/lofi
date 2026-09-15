@@ -65,7 +65,8 @@ $('masterBtn').onclick=async()=>{
     const res=await fetch(`${api}/master`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)});
     if(!res.ok){let d='Mastering failed';try{const e=await res.json();d=e.detail||d;}catch{}throw new Error(d);}
     const body=await res.json();
-    const wavUrl=`${api}${body.wav_url}`; const mp3Url=`${api}${body.mp3_url}`;
+    const wavUrl=`data:${body.wav_mime_type};base64,${body.wav_base64}`;
+    const mp3Url=`data:${body.mp3_mime_type};base64,${body.mp3_base64}`;
     $('masterWav').href=wavUrl;$('masterWav').download=`${safeFilename(lastGeneration.title)}-MASTER.wav`;
     $('masterMp3').href=mp3Url;$('masterMp3').download=`${safeFilename(lastGeneration.title)}-320kbps.mp3`;
     $('masterLinks').classList.remove('hidden');$('masterState').textContent='Master ready ✓';$('masterState').className='status online';
