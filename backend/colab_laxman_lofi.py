@@ -8,28 +8,29 @@ ACE_REPO = "/content/ACE-Step"
 
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--upgrade", "pip"], check=True)
 
-# Freshen the project checkout without failing if this runtime already has it.
 if os.path.isdir(os.path.join(REPO, ".git")):
     subprocess.run(["git", "-C", REPO, "pull", "--ff-only"], check=False)
 else:
     subprocess.run(["git", "clone", "https://github.com/LaxmanNepal/lofi.git", REPO], check=True)
 os.chdir(REPO)
 
-# ACE-Step's official repository is installed as an editable package.
-# Reuse/update an existing checkout instead of silently ignoring a failed clone.
 if os.path.isdir(os.path.join(ACE_REPO, ".git")):
     subprocess.run(["git", "-C", ACE_REPO, "pull", "--ff-only"], check=False)
 else:
     subprocess.run(["git", "clone", "https://github.com/ace-step/ACE-Step.git", ACE_REPO], check=True)
+
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-e", ACE_REPO], check=True)
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "fastapi", "uvicorn[standard]", "soundfile", "numpy<2", "nest-asyncio"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", "backend/requirements.txt"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "nest-asyncio"], check=True)
 
 # Optional secret. Set it before starting the server for basic protection.
 # os.environ["LAXMAN_LOFI_API_KEY"] = "change-this-secret"
 os.environ["ACE_CHECKPOINT_DIR"] = "/content/ace-checkpoints"
+os.environ["ACE_CPU_OFFLOAD"] = "true"
+os.environ["ACE_OVERLAPPED_DECODE"] = "true"
 
 # NVIDIA T4 is compute capability 7.5 and does not have native BF16 support.
-# Use BF16 only on GPUs with compute capability >= 8.0 (A10/A100/L4 and newer).
+# Use BF16 only on GPUs with compute capability >= 8.0.
 try:
     import torch
     if torch.cuda.is_available():
@@ -43,21 +44,21 @@ except Exception as exc:
     os.environ["ACE_BF16"] = "false"
     print(f"GPU capability check failed; using ACE_BF16=false: {exc}")
 
-# Verify the exact import used by backend/server.py before starting Uvicorn.
+# Apply the runtime-safe ACE-Step configuration to the checked-out API.
+subprocess.run([sys.executable, "backend/prepare_generation.py"], check=True)
+
 try:
     from acestep.pipeline_ace_step import ACEStepPipeline
     print("ACE-Step import: OK")
 except Exception as exc:
     raise RuntimeError(f"ACE-Step import failed before API startup: {exc}") from exc
 
-# Start the API and capture its logs so generation/model errors are visible.
 api_log = open("/content/laxman-lofi-api.log", "w")
 api = subprocess.Popen([
     sys.executable, "-m", "uvicorn", "backend.server:app",
     "--host", "0.0.0.0", "--port", "8000"
 ], stdout=api_log, stderr=subprocess.STDOUT)
 
-# Install Cloudflare's free quick-tunnel client.
 subprocess.run("wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared", shell=True, check=True)
 
 time.sleep(3)
