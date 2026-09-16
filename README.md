@@ -2,7 +2,7 @@
 
 Original-first Nepali music creation system for **Laxman Lofi**.
 
-## V4.2 — Story → Lyrics → Music → 4 Stems → Vocal Enhance → Mix → Smart Arrange → Structure → Section-Aware Arrangement → Stem-Aware Arrangement → Instrument Stem Intelligence → Master → Cover → Video → Lyric Video → ASR Sync → Quality Check → SEO → ZIP
+## V4.3 — Story → Lyrics → Music → 4 Stems → Vocal Enhance → Mix → Smart Arrange → Structure → Section-Aware Arrangement → Stem-Aware Arrangement → Instrument Stem Intelligence → Beat & Tempo Intelligence → Master → Cover → Video → Lyric Video → ASR Sync → Quality Check → SEO → ZIP
 
 - **Frontend:** static, mobile-first web app in `web/`
 - **Lyric AI:** local Hugging Face Transformers model
@@ -11,11 +11,12 @@ Original-first Nepali music creation system for **Laxman Lofi**.
 - **Stems:** Demucs `htdemucs` on demand
 - **Vocal enhancement:** noise reduction, dynamics, presence and de-essing-style processing
 - **Mix + master:** stem balance, EQ, compression, stereo width and loudness normalization
-- **Smart Arrangement V3.8:** FFmpeg/FFprobe energy analysis, heuristic verse/build/chorus labels, optional leading/trailing silence trimming, intro/outro fades and conservative chorus-energy lift
-- **Song Structure V3.9:** editable Intro/Verse/Pre-Chorus/Chorus/Bridge/Final Chorus/Outro timeline inferred from energy and position
-- **Section-Aware Arrangement V4.0:** browser-side OfflineAudioContext rendering applies section-specific gain, EQ emphasis, stereo-aware transitions and profile controls to the reviewed structure
-- **Stem-Aware Arrangement V4.1:** analyzes Demucs vocal and instrumental energy independently, then applies section-specific vocal/instrumental gains, chorus lifts, bridge reduction, vocal sidechain ducking, stereo-width shaping and final loudness normalization
-- **Instrument Stem Intelligence V4.2:** full Demucs four-stem separation into vocals/drums/bass/other, independent drum/bass/other energy timelines, section-aware stem gains, chorus lifts, bridge/intro/outro reductions, other-stem stereo shaping, vocal sidechain ducking and final WAV/MP3 rendering
+- **Smart Arrangement V3.8:** FFmpeg/FFprobe energy analysis and heuristic section shaping
+- **Song Structure V3.9:** editable Intro/Verse/Pre-Chorus/Chorus/Bridge/Final Chorus/Outro timeline
+- **Section-Aware Arrangement V4.0:** browser OfflineAudioContext section-specific gain/EQ/transitions
+- **Stem-Aware Arrangement V4.1:** independent vocal/instrumental section gains, chorus lifts, bridge reduction and ducking
+- **Instrument Stem Intelligence V4.2:** full Demucs vocals/drums/bass/other separation with independent energy timelines and section-aware stem automation
+- **Beat & Tempo Intelligence V4.3:** estimated BPM, beat grid, 4/4 bar map and reviewed section snapping; server engine plus browser fallback
 - **Cover art:** optional local SDXL generation on the Colab GPU
 - **YouTube video:** 1920×1080 H.264 + AAC visualizer
 - **Lyric video:** FFmpeg + ASS subtitles with Nepali Devanagari support and karaoke highlighting
@@ -23,38 +24,39 @@ Original-first Nepali music creation system for **Laxman Lofi**.
 - **Audio quality:** loudness, peak, duration and silence inspection
 - **Export:** WAV 24-bit / 44.1 kHz and MP3 320 kbps where applicable
 
+### V4.3 beat & tempo controls
+
+- Audio-derived BPM estimate
+- Beat duration and estimated first beat
+- Beat grid and bar starts
+- 4 beats per bar display for practical lofi arrangement work
+- Confidence indicator
+- Snap reviewed song sections to the nearest beat boundary
+- Beat map JSON copy/export through the browser workflow
+- Uses the backend `/beat/analyze` route when available, with a browser Web Audio RMS/onset fallback
+
+V4.3 beat detection is intentionally transparent: it uses an RMS/onset-envelope tempo heuristic rather than claiming perfect beat tracking, downbeat detection or symbolic transcription. Review the grid against the waveform before using it for a final release.
+
 ### V4.2 instrument controls
 
 - Drum level
 - Bass level
 - Melody / other level
-- Chorus drum lift
-- Chorus bass lift
-- Chorus melody lift
-- Bridge reduction
-- Intro reduction
-- Outro reduction
+- Chorus drum/bass/melody lifts
+- Bridge, intro and outro reductions
 - Other-stem stereo width
-- Vocal ducking via FFmpeg sidechain compression
+- Vocal ducking
 - Target loudness
 - Per-section drum, bass and other energy meters
-- Reuses the reviewed V3.9 structure when available
-- Backend-rendered 24-bit WAV + 320 kbps MP3
 
-V4.2 uses the actual four Demucs stems for drums, bass and other. “Melodic density” is represented by energy in the `other` stem rather than symbolic note transcription. The renderer does **not** synthesize new instruments or voices. Separation quality remains model-dependent, so review the resulting balance before publishing.
-
-### V4.2 API
+### API
 
 - `POST /instrument-arrangement/analyze` — prepare four Demucs stems and inspect drums/bass/other energy
-- `POST /instrument-arrangement` — render the reviewed structure through vocals + drums + bass + other
-
-### Earlier APIs
-
-- `POST /stem-arrangement/analyze` — inspect vocal and instrumental energy separately
-- `POST /stem-arrangement` — render the reviewed structure through the separate vocal/instrumental stems
+- `POST /instrument-arrangement` — render vocals + drums + bass + other
+- `POST /beat/analyze` — optional server-side V4.3 BPM/beat analysis when the Colab server includes the latest API
+- `POST /stem-arrangement/analyze` — inspect vocal/instrumental energy
+- `POST /stem-arrangement` — render the V4.1 stem-aware arrangement
 - `POST /arrangement/analyze` — inspect energy and heuristic sections
 - `POST /arrangement` — build the smart-arranged WAV + MP3
 
-Section detection is **heuristic**, based on audio energy; it is not claimed to be perfect musical transcription. Review the arrangement before publishing.
-
-The project is designed for user-controlled Colab/cloud execution and does not hardcode an API key.
+The project is designed for user-controlled Colab/cloud execution and does not hardcode an API key. Section and beat detection are analytical heuristics and should be reviewed before publishing.
