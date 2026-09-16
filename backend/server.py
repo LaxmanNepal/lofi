@@ -24,7 +24,7 @@ API_KEY=os.getenv("LAXMAN_LOFI_API_KEY","")
 CHECKPOINT_DIR=os.getenv("ACE_CHECKPOINT_DIR","/content/ace-checkpoints")
 DEVICE_ID=int(os.getenv("ACE_DEVICE_ID","0")); BF16=os.getenv("ACE_BF16","true").lower()=="true"
 OUTPUT_DIR=Path(os.getenv("LAXMAN_LOFI_OUTPUT_DIR","/content/laxman_lofi_output"))
-app=FastAPI(title="Laxman Lofi AI Studio API",version="3.3.0")
+app=FastAPI(title="Laxman Lofi AI Studio API",version="3.4.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"])
 pipeline=None
 class ComposeRequest(BaseModel):
@@ -48,7 +48,7 @@ class VideoRequest(BaseModel):
 class TimingRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); lyrics:str=Field(min_length=1,max_length=12000); model_size:str=Field(default="small",max_length=30); language:str|None=None
 class LyricVideoRequest(BaseModel):
- output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); lyrics:str=Field(min_length=1,max_length=12000); cover_base64:str|None=None; theme:str=Field(default="night",pattern=r"^(night|warm|minimal|nepal)$"); karaoke:bool=True; intro_seconds:float=Field(default=2,ge=0,le=10); outro_seconds:float=Field(default=2,ge=0,le=10); waveform:bool=True
+ output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$"); title:str=Field(min_length=1,max_length=200); lyrics:str=Field(min_length=1,max_length=12000); cover_base64:str|None=None; timing:list[dict]|None=None; theme:str=Field(default="night",pattern=r"^(night|warm|minimal|nepal)$"); karaoke:bool=True; intro_seconds:float=Field(default=2,ge=0,le=10); outro_seconds:float=Field(default=2,ge=0,le=10); waveform:bool=True
 def check_key(authorization:str|None):
  if API_KEY and authorization!=f"Bearer {API_KEY}": raise HTTPException(status_code=401,detail="Invalid API key")
 def load_pipeline():
@@ -64,7 +64,7 @@ def video_path(output_id:str)->Path:return OUTPUT_DIR/"videos"/f"{output_id}.mp4
 def lyric_video_path(output_id:str)->Path:return OUTPUT_DIR/"videos"/f"{output_id}-lyrics.mp4"
 def audio_b64(path:Path)->str:return base64.b64encode(path.read_bytes()).decode("ascii")
 @app.get("/health")
-def health():return {"status":"healthy","version":"3.3.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","lyric_video":"ffmpeg+ass","lyric_timing":"faster-whisper","package_export":"zip"}
+def health():return {"status":"healthy","version":"3.4.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","lyric_video":"ffmpeg+ass","lyric_timing":"faster-whisper","package_export":"zip"}
 @app.post("/compose")
 def compose(req:ComposeRequest,authorization:str|None=Header(default=None)):
  check_key(authorization)
@@ -161,10 +161,10 @@ def lyric_video(req:LyricVideoRequest,authorization:str|None=Header(default=None
  if not cover_path.is_file():raise HTTPException(status_code=400,detail="Generate or provide cover art first.")
  out=lyric_video_path(req.output_id)
  try:
-  info=build_lyric_video(source,cover_path,out,req.lyrics,req.title,theme=req.theme,karaoke=req.karaoke,intro=req.intro_seconds,outro=req.outro_seconds,waveform=req.waveform)
+  info=build_lyric_video(source,cover_path,out,req.lyrics,req.title,theme=req.theme,karaoke=req.karaoke,intro=req.intro_seconds,outro=req.outro_seconds,waveform=req.waveform,timing=req.timing)
   return {"status":"success","output_id":req.output_id,"file_name":out.name,"mime_type":"video/mp4","width":1920,"height":1080,"video_base64":file_base64(out),"codec":"H.264 + AAC + ASS lyrics","youtube_ready":True,**info}
  except ValueError as exc:raise HTTPException(status_code=400,detail=str(exc)) from exc
- except RuntimeError as exc:raise HTTPException(status_code=500,detail=f"Lyric video export failed: {exc}") from exc
+ except RuntimeError as exc:raise HTTPException(status_code=500,detail=str(exc)) from exc
  except Exception as exc:raise HTTPException(status_code=500,detail=f"Lyric video export failed: {exc}") from exc
 @app.post("/package")
 def package(req:PackageRequest,authorization:str|None=Header(default=None)):
