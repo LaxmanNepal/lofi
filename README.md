@@ -2,7 +2,7 @@
 
 Original-first Nepali music creation system for **Laxman Lofi**.
 
-## V4.5 — Story → Lyrics → Music → 4 Stems → Vocal Enhance → Mix → Smart Arrange → Structure → Section-Aware Arrangement → Stem-Aware Arrangement → Instrument Stem Intelligence → Beat & Tempo Intelligence → Rhythm-Aware Arrangement → Groove & Humanization → Master → Cover → Video → Lyric Video → ASR Sync → Quality Check → SEO → ZIP
+## V4.6 — Story → Lyrics → Music → 4 Stems → Vocal Enhance → Mix → Smart Arrange → Structure → Section-Aware Arrangement → Stem-Aware Arrangement → Instrument Stem Intelligence → Beat & Tempo Intelligence → Rhythm-Aware Arrangement → Groove & Humanization → Melody & Chord Intelligence → Master → Cover → Video → Lyric Video → ASR Sync → Quality Check → SEO → ZIP
 
 - **Frontend:** static, mobile-first web app in `web/`
 - **Lyric AI:** local Hugging Face Transformers model
@@ -19,6 +19,7 @@ Original-first Nepali music creation system for **Laxman Lofi**.
 - **Beat & Tempo Intelligence V4.3:** estimated BPM, beat grid, 4/4 bar map and reviewed section snapping
 - **Rhythm-Aware Arrangement V4.4:** beat/bar-synced gain automation, existing-drum accents, chorus lifts, bass/melody transitions, vocal ducking and bar-aligned fades
 - **Groove & Humanization V4.5:** selectable Lofi/Chill/Boom-Bap/Cinematic profiles, deterministic swing offsets, micro-timing map and subtle beat-synchronous gain accents
+- **Melody & Chord Intelligence V4.6:** estimated key/mode, chord-template timeline, harmonic density, chord-change rate and tension indicators from existing audio
 - **Cover art:** optional local SDXL generation on the Colab GPU
 - **YouTube video:** 1920×1080 H.264 + AAC visualizer
 - **Lyric video:** FFmpeg + ASS subtitles with Nepali Devanagari support and karaoke highlighting
@@ -26,20 +27,22 @@ Original-first Nepali music creation system for **Laxman Lofi**.
 - **Audio quality:** loudness, peak, duration and silence inspection
 - **Export:** WAV 24-bit / 44.1 kHz and MP3 320 kbps where applicable
 
-### V4.5 groove controls
+### V4.6 harmony controls
 
-- Lofi, Chill, Boom-Bap and Cinematic groove profiles
-- Humanization amount
-- Independent drum pulse, bass movement and melody movement controls
-- Repeatable seed for deterministic results
-- Groove beat map with bar, beat position and millisecond timing offset
-- Browser OfflineAudioContext rendering, so the studio can still humanize audio without a new backend route
-- History metadata for groove profile, amount and seed
+- Estimated key and major/minor mode
+- Key confidence and chord confidence
+- Chord-change timeline with start/end time
+- Harmonic density measured as estimated changes per minute
+- Tension indicator per harmonic region
+- Analyze Harmony, Analyze Chords and Align to Structure actions
+- Copy complete harmony JSON for downstream workflows
+- Server-side lightweight WAV analyzer when `/harmony/analyze` is available, with browser Web Audio fallback
 
-V4.5 is intentionally non-generative: it changes timing-adjacent gain accents on existing audio and does not synthesize new notes, instruments or voices. The timing map is a controlled heuristic rather than MIDI transcription.
+V4.6 is intentionally analytical rather than generative. The harmonic map is an estimate based on pitch-class/chroma energy and chord templates; lo-fi noise, reverb, layered instruments and bass ambiguity can produce incorrect keys or chords. It is not exact MIDI or symbolic chord transcription.
 
 ### API
 
+- `POST /harmony/analyze` — optional server-side V4.6 key/chord/harmonic analysis
 - `POST /rhythm-arrangement/analyze` — analyze the V4.3 beat grid and snap sections to bars when the matching server route is available
 - `POST /rhythm-arrangement` — render beat/bar-synced four-stem automation when the matching server route is available
 - `POST /instrument-arrangement/analyze` — prepare four Demucs stems and inspect drums/bass/other energy
@@ -50,4 +53,4 @@ V4.5 is intentionally non-generative: it changes timing-adjacent gain accents on
 - `POST /arrangement/analyze` — inspect energy and heuristic sections
 - `POST /arrangement` — build the smart-arranged WAV + MP3
 
-The project is designed for user-controlled Colab/cloud execution and does not hardcode an API key. Analytical rhythm/section results should be reviewed before publishing.
+The project is designed for user-controlled Colab/cloud execution and does not hardcode an API key. Analytical harmonic/rhythm/section results should be reviewed before publishing.
