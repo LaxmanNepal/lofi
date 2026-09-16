@@ -2,7 +2,7 @@
 
 Original-first Nepali music creation system for **Laxman Lofi**.
 
-## V3.3 — Story → Lyrics → Music → Master → Stems → Cover → Video → Lyric Video → ASR Sync → SEO → ZIP
+## V3.4 — Story → Lyrics → Music → Master → Stems → Cover → Video → Lyric Video → ASR Sync → Reviewed Sync → SEO → ZIP
 
 - **Frontend:** static, mobile-first web app in `web/`
 - **Lyric AI:** local Hugging Face Transformers model
@@ -14,12 +14,24 @@ Original-first Nepali music creation system for **Laxman Lofi**.
 - **YouTube video:** 1920×1080 H.264 + AAC visualizer video
 - **Lyric video:** FFmpeg + ASS subtitles with Nepali Devanagari support, karaoke-style highlighting, intro/outro fades and four visual themes
 - **Lyric synchronization:** faster-whisper ASR on the generated vocal, lyric-line matching, confidence metadata and editable browser timestamps
+- **Reviewed synchronization:** V3.4 sends the edited timing rows directly to the lyric-video renderer; valid ASR word timestamps drive word-level karaoke highlights when available
 - **YouTube SEO:** local AI-generated title, description, tags, hashtags and short share copy
 - **Release packaging:** server-side ZIP containing available audio, stems, artwork, SEO and metadata
 - **Reusable presets:** Pardeshi, Romantic, Rainy Night and Nepal Atmosphere, plus custom browser-saved presets
 - **Batch generation:** up to 20 stories, processed sequentially to avoid concurrent GPU overload
 - **Cloud runner:** Google Colab notebook in `backend/`
 - **API:** `/compose`, `/generate`, `/master`, `/stems`, `/stem-mix`, `/seo`, `/cover`, `/video`, `/lyric-timing`, `/lyric-video`, `/package`, `/audio/{file_name}`
+
+### V3.4 reviewed lyric-video workflow
+
+1. Generate the vocal song.
+2. Open **Exact Lyric Sync Studio** and run faster-whisper timing.
+3. Review/edit every start, end and lyric line.
+4. Click **Apply Timing** to keep the reviewed rows in the current generation.
+5. In **Final Synchronized Lyric Video**, choose a theme, karaoke mode and waveform setting.
+6. Render the 1080p MP4. The renderer uses the reviewed timestamps rather than rebuilding proportional timing.
+
+If ASR word timestamps are available, the final karaoke event uses their actual word durations. If a line has no word timestamps, the renderer distributes the line highlight across its reviewed duration. The renderer still validates timing rows and falls back to estimated timing only when no reviewed timing is supplied.
 
 ### V3.3 lyric synchronization workflow
 
@@ -58,4 +70,4 @@ Host `web/` at `https://apps.laxmannepal.com.np/laxman-lofi/`.
 - V3.1: YouTube video builder ✅
 - V3.2: AI lyric video engine with estimated karaoke timing ✅
 - V3.3: editable lyric timing + ASR-assisted synchronization ✅
-- V3.4: synchronized lyric-video rendering using reviewed timestamps
+- V3.4: synchronized lyric-video rendering using reviewed timestamps ✅
