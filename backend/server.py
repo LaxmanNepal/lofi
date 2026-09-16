@@ -15,8 +15,9 @@ from video_engine import build_visualizer,file_base64
 from lyric_video_engine import build_lyric_video
 from timing_engine import time_lyrics
 from mix_engine import build_mix_master
+from vocal_enhance_engine import enhance_vocal
 API_KEY=os.getenv("LAXMAN_LOFI_API_KEY","");CHECKPOINT_DIR=os.getenv("ACE_CHECKPOINT_DIR","/content/ace-checkpoints");DEVICE_ID=int(os.getenv("ACE_DEVICE_ID","0"));BF16=os.getenv("ACE_BF16","true").lower()=="true";OUTPUT_DIR=Path(os.getenv("LAXMAN_LOFI_OUTPUT_DIR","/content/laxman_lofi_output"))
-app=FastAPI(title="Laxman Lofi AI Studio API",version="3.6.0");app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"]);pipeline=None
+app=FastAPI(title="Laxman Lofi AI Studio API",version="3.7.0");app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"]);pipeline=None
 class ComposeRequest(BaseModel):
  idea:str=Field(min_length=3,max_length=1000);mood:str=Field(default="emotional",max_length=50);language:str=Field(default="Nepali",max_length=30);voice:str=Field(default="male",max_length=20);duration:int=Field(default=180,ge=30,le=300);style:str=Field(default="warm piano, mellow guitar, dusty vinyl texture",max_length=500)
 class GenerateRequest(BaseModel):
@@ -30,9 +31,11 @@ class CoverRequest(BaseModel):
 class StemRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");model:str=Field(default="htdemucs",max_length=50)
 class StemMixRequest(BaseModel):
- output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");vocal_gain:float=Field(default=1.0,ge=0,le=2);instrumental_gain:float=Field(default=1.0,ge=0,le=2);vocal_pan:float=Field(default=0,ge=-1,le=1)
+ output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");vocal_gain:float=Field(default=1,ge=0,le=2);instrumental_gain:float=Field(default=1,ge=0,le=2);vocal_pan:float=Field(default=0,ge=-1,le=1)
 class MixMasterRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");vocal_gain:float=Field(default=1,ge=0,le=2);instrumental_gain:float=Field(default=1,ge=0,le=2);vocal_pan:float=Field(default=0,ge=-1,le=1);cleanup:float=Field(default=.35,ge=0,le=1);warmth:float=Field(default=.25,ge=-1,le=1);presence:float=Field(default=.2,ge=-1,le=1);compression:float=Field(default=.35,ge=0,le=1);deessing:float=Field(default=.2,ge=0,le=1);stereo_width:float=Field(default=1,ge=0,le=1.5);target_lufs:float=Field(default=-14,ge=-18,le=-9);true_peak:float=Field(default=-1,ge=-3,le=-.1)
+class VocalEnhanceRequest(BaseModel):
+ output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");denoise:float=Field(default=.35,ge=0,le=1);derverb:float=Field(default=.2,ge=0,le=1);breath_control:float=Field(default=.2,ge=0,le=1);presence:float=Field(default=.3,ge=0,le=1);deesser:float=Field(default=.25,ge=0,le=1);ducking:float=Field(default=0,ge=0,le=1)
 class PackageRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");title:str=Field(min_length=1,max_length=200);metadata:dict={};seo:dict|None=None;cover_base64:str|None=None
 class VideoRequest(BaseModel):
@@ -56,15 +59,23 @@ def video_path(i:str)->Path:return OUTPUT_DIR/"videos"/f"{i}.mp4"
 def lyric_video_path(i:str)->Path:return OUTPUT_DIR/"videos"/f"{i}-lyrics.mp4"
 def audio_b64(p:Path):return base64.b64encode(p.read_bytes()).decode("ascii")
 @app.get("/health")
-def health():return {"status":"healthy","version":"3.6.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","lyric_video":"ffmpeg+ass","lyric_timing":"faster-whisper","mix_master":"ffmpeg-dsp","package_export":"zip"}
+def health():return {"status":"healthy","version":"3.7.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","lyric_video":"ffmpeg+ass","lyric_timing":"faster-whisper","vocal_enhancement":"ffmpeg-dsp","mix_master":"ffmpeg-dsp","package_export":"zip"}
+@app.post("/vocal-enhance")
+def vocal_enhance(req:VocalEnhanceRequest,authorization:str|None=Header(default=None)):
+ check_key(authorization);v,_=stem_paths(req.output_id)
+ if not v.is_file():raise HTTPException(status_code=404,detail="Separate vocals and instrumental stems first.")
+ out=OUTPUT_DIR/"enhanced"/req.output_id/"ENHANCED-VOCAL.wav"
+ try:
+  info=enhance_vocal(v,out,req.denoise,req.derverb,req.breath_control,req.presence,req.deesser,req.ducking);return {"status":"success","output_id":req.output_id,"file_name":out.name,"mime_type":"audio/wav","audio_base64":audio_b64(out),**info}
+ except ValueError as e:raise HTTPException(status_code=400,detail=str(e)) from e
+ except RuntimeError as e:raise HTTPException(status_code=500,detail=str(e)) from e
 @app.post("/mix-master")
 def mix_master(req:MixMasterRequest,authorization:str|None=Header(default=None)):
  check_key(authorization);v,i=stem_paths(req.output_id)
  if not v.is_file() or not i.is_file():raise HTTPException(status_code=404,detail="Separate vocals and instrumental stems first.")
  d=OUTPUT_DIR/"mixes"/req.output_id;w=d/"FINAL-MASTER.wav";m=d/"FINAL-MASTER-320kbps.mp3"
  try:
-  info=build_mix_master(v,i,w,m,req.vocal_gain,req.instrumental_gain,req.vocal_pan,req.cleanup,req.warmth,req.presence,req.compression,req.deessing,req.stereo_width,req.target_lufs,req.true_peak)
-  return {"status":"success","output_id":req.output_id,"wav_file_name":w.name,"mp3_file_name":m.name,"wav_base64":audio_b64(w),"mp3_base64":audio_b64(m),"wav_mime_type":"audio/wav","mp3_mime_type":"audio/mpeg",**info}
+  info=build_mix_master(v,i,w,m,req.vocal_gain,req.instrumental_gain,req.vocal_pan,req.cleanup,req.warmth,req.presence,req.compression,req.deessing,req.stereo_width,req.target_lufs,req.true_peak);return {"status":"success","output_id":req.output_id,"wav_file_name":w.name,"mp3_file_name":m.name,"wav_base64":audio_b64(w),"mp3_base64":audio_b64(m),"wav_mime_type":"audio/wav","mp3_mime_type":"audio/mpeg",**info}
  except ValueError as e:raise HTTPException(status_code=400,detail=str(e)) from e
  except RuntimeError as e:raise HTTPException(status_code=500,detail=str(e)) from e
 @app.post("/compose")
