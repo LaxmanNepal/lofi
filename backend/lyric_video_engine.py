@@ -15,7 +15,7 @@ def audio_duration(path: Path) -> float:
 
 
 def _ass_time(seconds: float) -> str:
-    seconds = max(0.0, seconds)
+    seconds = max(0.0, float(seconds))
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = seconds % 60
@@ -27,7 +27,7 @@ def _ass_time(seconds: float) -> str:
 
 
 def _escape_ass(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", " ")
+    return str(text).replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}").replace("\n", " ")
 
 
 def _lyric_lines(lyrics: str):
@@ -56,6 +56,36 @@ def build_timing(lyrics: str, duration: float, intro: float = 2.0, outro: float 
     return events
 
 
+def _normalize_events(timing):
+    rows = []
+    if not timing:
+        return rows
+    for item in timing:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("text", "")).strip()
+        try:
+            start = float(item.get("start"))
+            end = float(item.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if not text or end <= start:
+            continue
+        words = []
+        for word in item.get("words") or []:
+            if not isinstance(word, dict) or not str(word.get("text", "")).strip():
+                continue
+            try:
+                ws, we = float(word.get("start")), float(word.get("end"))
+            except (TypeError, ValueError):
+                continue
+            if we > ws:
+                words.append({"text": str(word["text"]).strip(), "start": ws, "end": we})
+        rows.append({"text": text, "start": max(0.0, start), "end": max(0.0, end), "words": words, "source": item.get("source", "reviewed")})
+    rows.sort(key=lambda x: x["start"])
+    return rows
+
+
 def _karaoke_text(line: str, span: float) -> str:
     words = re.findall(r"\S+", line)
     if not words:
@@ -64,7 +94,17 @@ def _karaoke_text(line: str, span: float) -> str:
     return " ".join("{\\k" + str(units) + "}" + _escape_ass(word) for word in words)
 
 
-def write_ass(events, path: Path, theme: str = "night"):
+def _word_karaoke(words, line, start, end):
+    if not words:
+        return _karaoke_text(line, end - start)
+    parts = []
+    for word in words:
+        dur = max(1, int(round((word["end"] - word["start"]) * 100)))
+        parts.append("{\\k" + str(dur) + "}" + _escape_ass(word["text"]))
+    return " ".join(parts)
+
+
+def write_ass(events, path: Path, theme: str = "night", karaoke: bool = True):
     themes = {
         "night": ("Noto Sans Devanagari", 64, "&H00FFFFFF", "&H00BFE8FF", "&H99000000"),
         "warm": ("Noto Sans Devanagari", 64, "&H00FFF4DF", "&H00FFD08A", "&H990B0703"),
@@ -79,12 +119,17 @@ def write_ass(events, path: Path, theme: str = "night"):
         f"Style: Lyric,{font},{size},{primary},{secondary},&H00101010,{back},1,0,0,0,100,100,0,0,1,3,1,2,120,120,100,1",
         "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
     ]
-    for start, end, text in events:
-        lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Lyric,,0,0,0,karaoke,{_karaoke_text(text, end-start)}")
+    for row in events:
+        start, end, text = row["start"], row["end"], row["text"]
+        if karaoke:
+            text = _word_karaoke(row.get("words") or [], text, start, end)
+        else:
+            text = _escape_ass(text)
+        lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Lyric,,0,0,0,karaoke,{text}")
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def build_lyric_video(audio_path: Path, cover_path: Path, output_path: Path, lyrics: str, title: str, theme: str = "night", karaoke: bool = True, intro: float = 2.0, outro: float = 2.0, waveform: bool = True):
+def build_lyric_video(audio_path: Path, cover_path: Path, output_path: Path, lyrics: str, title: str, theme: str = "night", karaoke: bool = True, intro: float = 2.0, outro: float = 2.0, waveform: bool = True, timing=None):
     if not audio_path.is_file():
         raise ValueError("Source audio not found.")
     if not cover_path.is_file():
@@ -94,10 +139,10 @@ def build_lyric_video(audio_path: Path, cover_path: Path, output_path: Path, lyr
     duration = audio_duration(audio_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     ass_path = output_path.with_suffix(".ass")
-    events = build_timing(lyrics, duration, intro, outro)
-    write_ass(events, ass_path, theme)
+    reviewed = _normalize_events(timing)
+    events = reviewed if reviewed else [{"start": a, "end": b, "text": c, "words": []} for a, b, c in build_timing(lyrics, duration, intro, outro)]
+    write_ass(events, ass_path, theme, karaoke)
 
-    safe_title = title.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
     vf = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,zoompan=z='min(zoom+0.00035,1.08)':d=1:s=1920x1080:fps=30,format=yuv420p"
     if waveform:
         vf += ",drawbox=x=0:y=1010:w=iw:h=4:color=white@0.20:t=fill"
@@ -105,10 +150,11 @@ def build_lyric_video(audio_path: Path, cover_path: Path, output_path: Path, lyr
     fade_end = max(0.0, duration - outro)
     vf += f",fade=t=in:st=0:d={min(1.2, intro):g},fade=t=out:st={fade_end:g}:d={min(1.5, outro):g}"
 
+    safe_title = title.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
     cmd = ["ffmpeg", "-y", "-loop", "1", "-i", str(cover_path), "-i", str(audio_path), "-vf", vf, "-map", "0:v:0", "-map", "1:a:0", "-t", f"{duration:g}", "-c:v", "libx264", "-preset", "medium", "-crf", "19", "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "320k", "-ar", "48000", "-shortest", "-movflags", "+faststart", "-metadata", f"title={safe_title}", str(output_path)]
     _run(cmd)
     try:
         ass_path.unlink(missing_ok=True)
     except Exception:
         pass
-    return {"duration": duration, "lines": len(events), "theme": theme, "estimated_timing": True}
+    return {"duration": duration, "lines": len(events), "theme": theme, "timing_source": "reviewed_asr" if reviewed else "estimated", "reviewed_timing": bool(reviewed), "karaoke": karaoke}
