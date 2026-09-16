@@ -17,8 +17,9 @@ from timing_engine import time_lyrics
 from mix_engine import build_mix_master
 from vocal_enhance_engine import enhance_vocal
 from arrangement_engine import build_arrangement,analyze_arrangement
+from stem_arrangement_engine import analyze_stems,build_stem_arrangement
 API_KEY=os.getenv("LAXMAN_LOFI_API_KEY","");CHECKPOINT_DIR=os.getenv("ACE_CHECKPOINT_DIR","/content/ace-checkpoints");DEVICE_ID=int(os.getenv("ACE_DEVICE_ID","0"));BF16=os.getenv("ACE_BF16","true").lower()=="true";OUTPUT_DIR=Path(os.getenv("LAXMAN_LOFI_OUTPUT_DIR","/content/laxman_lofi_output"))
-app=FastAPI(title="Laxman Lofi AI Studio API",version="3.8.0");app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"]);pipeline=None
+app=FastAPI(title="Laxman Lofi AI Studio API",version="4.1.0");app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_credentials=False,allow_methods=["*"],allow_headers=["*"]);pipeline=None
 class ComposeRequest(BaseModel):
  idea:str=Field(min_length=3,max_length=1000);mood:str=Field(default="emotional",max_length=50);language:str=Field(default="Nepali",max_length=30);voice:str=Field(default="male",max_length=20);duration:int=Field(default=180,ge=30,le=300);style:str=Field(default="warm piano, mellow guitar, dusty vinyl texture",max_length=500)
 class GenerateRequest(BaseModel):
@@ -39,6 +40,8 @@ class VocalEnhanceRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");denoise:float=Field(default=.35,ge=0,le=1);derverb:float=Field(default=.2,ge=0,le=1);breath_control:float=Field(default=.2,ge=0,le=1);presence:float=Field(default=.3,ge=0,le=1);deesser:float=Field(default=.25,ge=0,le=1);ducking:float=Field(default=0,ge=0,le=1)
 class ArrangementRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");trim_silence:bool=True;intro_fade:float=Field(default=2,ge=0,le=10);outro_fade:float=Field(default=3,ge=0,le=10);chorus_lift:float=Field(default=.08,ge=0,le=.30);energy_sensitivity:float=Field(default=.55,ge=.05,le=1)
+class StemArrangementRequest(BaseModel):
+ output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");structure:list[dict]=[];vocal_level:float=Field(default=1,ge=0,le=2);instrumental_level:float=Field(default=1,ge=0,le=2);chorus_vocal_lift:float=Field(default=.08,ge=0,le=.30);chorus_instrumental_lift:float=Field(default=.10,ge=0,le=.30);bridge_reduction:float=Field(default=.12,ge=0,le=.60);ducking:float=Field(default=.18,ge=0,le=.80);stereo_width:float=Field(default=1.05,ge=0,le=1.5);target_lufs:float=Field(default=-14,ge=-18,le=-9);true_peak:float=Field(default=-1,ge=-3,le=-.1)
 class PackageRequest(BaseModel):
  output_id:str=Field(min_length=8,max_length=100,pattern=r"^[A-Za-z0-9_-]+$");title:str=Field(min_length=1,max_length=200);metadata:dict={};seo:dict|None=None;cover_base64:str|None=None
 class VideoRequest(BaseModel):
@@ -61,9 +64,10 @@ def stem_paths(i:str):return stem_dir(i)/"vocals.wav",stem_dir(i)/"instrumental.
 def video_path(i:str)->Path:return OUTPUT_DIR/"videos"/f"{i}.mp4"
 def lyric_video_path(i:str)->Path:return OUTPUT_DIR/"videos"/f"{i}-lyrics.mp4"
 def arrangement_paths(i:str):return OUTPUT_DIR/"arranged"/i/"SMART-ARRANGEMENT.wav",OUTPUT_DIR/"arranged"/i/"SMART-ARRANGEMENT-320kbps.mp3"
+def stem_arrangement_paths(i:str):return OUTPUT_DIR/"stem-arranged"/i/"STEM-AWARE-ARRANGEMENT.wav",OUTPUT_DIR/"stem-arranged"/i/"STEM-AWARE-ARRANGEMENT-320kbps.mp3"
 def audio_b64(p:Path):return base64.b64encode(p.read_bytes()).decode("ascii")
 @app.get("/health")
-def health():return {"status":"healthy","version":"3.8.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","lyric_video":"ffmpeg+ass","lyric_timing":"faster-whisper","vocal_enhancement":"ffmpeg-dsp","mix_master":"ffmpeg-dsp","smart_arrangement":"ffmpeg-rms-heuristic","package_export":"zip"}
+def health():return {"status":"healthy","version":"4.1.0","model":"ACE-Step v1 3.5B","lyric_model":os.getenv("LYRIC_MODEL_ID","ministral/Ministral-3b-instruct"),"cuda":torch.cuda.is_available(),"audio_mastering":"ffmpeg","cover_art":"sdxl","stem_separation":"demucs","video_export":"ffmpeg","lyric_video":"ffmpeg+ass","lyric_timing":"faster-whisper","vocal_enhancement":"ffmpeg-dsp","mix_master":"ffmpeg-dsp","smart_arrangement":"ffmpeg-rms-heuristic","stem_arrangement":"demucs-stems+ffmpeg-dsp","package_export":"zip"}
 @app.post("/arrangement/analyze")
 def arrangement_analyze(req:ArrangementRequest,authorization:str|None=Header(default=None)):
  check_key(authorization);s=source_path(req.output_id)
@@ -78,6 +82,23 @@ def arrangement(req:ArrangementRequest,authorization:str|None=Header(default=Non
  w,m=arrangement_paths(req.output_id)
  try:
   info=build_arrangement(s,w,m,req.trim_silence,req.intro_fade,req.outro_fade,req.chorus_lift,req.energy_sensitivity)
+  return {"status":"success","output_id":req.output_id,"wav_file_name":w.name,"mp3_file_name":m.name,"wav_base64":audio_b64(w),"mp3_base64":audio_b64(m),"wav_mime_type":"audio/wav","mp3_mime_type":"audio/mpeg",**info}
+ except ValueError as e:raise HTTPException(status_code=400,detail=str(e)) from e
+ except RuntimeError as e:raise HTTPException(status_code=500,detail=str(e)) from e
+@app.post("/stem-arrangement/analyze")
+def stem_arrangement_analyze(req:StemArrangementRequest,authorization:str|None=Header(default=None)):
+ check_key(authorization);v,i=stem_paths(req.output_id)
+ if not v.is_file() or not i.is_file():raise HTTPException(status_code=404,detail="Separate vocals and instrumental stems first.")
+ try:return {"status":"success","output_id":req.output_id,**analyze_stems(v,i,4.0,req.structure or None)}
+ except ValueError as e:raise HTTPException(status_code=400,detail=str(e)) from e
+ except RuntimeError as e:raise HTTPException(status_code=500,detail=str(e)) from e
+@app.post("/stem-arrangement")
+def stem_arrangement(req:StemArrangementRequest,authorization:str|None=Header(default=None)):
+ check_key(authorization);v,i=stem_paths(req.output_id)
+ if not v.is_file() or not i.is_file():raise HTTPException(status_code=404,detail="Separate vocals and instrumental stems first.")
+ w,m=stem_arrangement_paths(req.output_id)
+ try:
+  info=build_stem_arrangement(v,i,w,m,req.structure,req.vocal_level,req.instrumental_level,req.chorus_vocal_lift,req.chorus_instrumental_lift,req.bridge_reduction,req.ducking,req.stereo_width,req.target_lufs,req.true_peak)
   return {"status":"success","output_id":req.output_id,"wav_file_name":w.name,"mp3_file_name":m.name,"wav_base64":audio_b64(w),"mp3_base64":audio_b64(m),"wav_mime_type":"audio/wav","mp3_mime_type":"audio/mpeg",**info}
  except ValueError as e:raise HTTPException(status_code=400,detail=str(e)) from e
  except RuntimeError as e:raise HTTPException(status_code=500,detail=str(e)) from e
