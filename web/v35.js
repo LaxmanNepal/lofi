@@ -1,0 +1,26 @@
+(() => {
+  const result=document.querySelector('#result'); if(!result) return;
+  const style=document.createElement('style');style.textContent=`.v35-quality{grid-column:1/-1}.v35-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.v35-metric{padding:14px;border-radius:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}.v35-metric small{display:block;opacity:.65}.v35-metric strong{display:block;font-size:20px;margin-top:4px}.v35-checks{display:grid;gap:8px}.v35-check{padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.05)}.v35-pass{border-left:3px solid #4ade80}.v35-review{border-left:3px solid #f59e0b}@media(max-width:800px){.v35-quality{grid-column:auto}.v35-metrics{grid-template-columns:1fr 1fr}}`;document.head.appendChild(style);
+  const card=document.createElement('div');card.className='v14-card v35-quality';card.innerHTML=`<span class="step">16</span><h3>🎚️ Audio Quality Studio</h3><p>Run a local pre-publish inspection on the generated audio. It checks peak level, approximate loudness, duration and long silent gaps before you release.</p><div class="v14-row"><button id="qualityBtn" class="v14-btn primary">Analyze Audio</button><span id="qualityState" class="status offline">Generate audio first</span></div><div id="qualityMetrics" class="v35-metrics"></div><div id="qualityChecks" class="v35-checks"></div><p id="qualityNote" class="hint"></p></div>`;result.appendChild(card);
+  const $=id=>document.getElementById(id);
+  function fmt(v){return Number.isFinite(v)?v.toFixed(1):'—'}
+  function analyze(buf,sampleRate){
+    const ch=buf.numberOfChannels, n=buf.length, duration=n/sampleRate; let sum=0,peak=0, silent=0, window=sampleRate, silentWindows=0;
+    for(let c=0;c<ch;c++){const a=buf.getChannelData(c);for(let i=0;i<n;i++){const x=a[i];sum+=x*x;const ax=Math.abs(x);if(ax>peak)peak=ax}}
+    const rms=Math.sqrt(sum/(n*ch)); const dbfs=20*Math.log10(Math.max(1e-9,peak));
+    for(let s=0;s<n;s+=window){let e=Math.min(n,s+window), energy=0;for(let c=0;c<ch;c++){const a=buf.getChannelData(c);for(let i=s;i<e;i++)energy+=a[i]*a[i]}const r=Math.sqrt(energy/Math.max(1,(e-s)*ch));if(20*Math.log10(Math.max(1e-9,r))<-50){silentWindows++;}}
+    const approxLufs=20*Math.log10(Math.max(1e-9,rms))-0.5;
+    return {duration,peakDbfs:dbfs,approxLufs,silence:silentWindows};
+  }
+  $('qualityBtn').onclick=async()=>{
+    const id=lastGeneration?.outputId;if(!id){alert('Generate a song first.');return} const api=typeof getApi==='function'?getApi():'';
+    $('qualityBtn').disabled=true;$('qualityState').textContent='Analyzing audio…';$('qualityState').className='status';
+    try{
+      let d=null;
+      if(api){try{const r=await fetch(`${api}/quality?output_id=${encodeURIComponent(id)}`,{method:'POST',headers:{...authHeaders()}});if(r.ok)d=await r.json()}catch(_){}}
+      if(!d){const src=lastGeneration.audioBase64;if(!src)throw new Error('Audio data is unavailable. Generate the song again.');const raw=atob(src),bytes=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);const ctx=new (window.AudioContext||window.webkitAudioContext)();const buf=await ctx.decodeAudioData(bytes.buffer);const a=analyze(buf,buf.sampleRate);d={status:(a.peakDbfs<=-1&&a.approxLufs>=-16&&a.approxLufs<=-12)?'ready':'review',duration:a.duration,true_peak_dbfs:a.peakDbfs,integrated_lufs:a.approxLufs,long_silence_regions:a.silence,checks:[{id:'peak',status:a.peakDbfs<=-1?'pass':'warning',message:`Peak: ${fmt(a.peakDbfs)} dBFS (target ≤ -1 dBFS).`},{id:'loudness',status:a.approxLufs>=-16&&a.approxLufs<=-12?'pass':'warning',message:`Approx. loudness: ${fmt(a.approxLufs)} LUFS.`},{id:'duration',status:a.duration>=10?'pass':'warning',message:`Duration: ${fmt(a.duration)} seconds.`},{id:'silence',status:a.silence<=3?'pass':'warning',message:`Long silent windows: ${a.silence}.`}],summary:'Browser analysis (approximate loudness; listen before publishing).',method:'Web Audio peak/RMS analysis'};await ctx.close()}
+      $('qualityMetrics').innerHTML=[['Loudness',d.integrated_lufs==null?'—':`${fmt(d.integrated_lufs)} LUFS`],['Peak',d.true_peak_dbfs==null?'—':`${fmt(d.true_peak_dbfs)} dBFS`],['Duration',`${fmt(d.duration)} s`],['Silence',`${d.long_silence_regions??0} region(s)`]].map(x=>`<div class="v35-metric"><small>${x[0]}</small><strong>${x[1]}</strong></div>`).join('');
+      $('qualityChecks').innerHTML=(d.checks||[]).map(x=>`<div class="v35-check ${x.status==='pass'?'v35-pass':'v35-review'}">${x.status==='pass'?'✓':'⚠'} ${x.message}</div>`).join('');$('qualityNote').textContent=`${d.summary} ${d.note||''}`;$('qualityState').textContent=d.status==='ready'?'Ready for listening ✓':'Review before publishing';$('qualityState').className=d.status==='ready'?'status online':'status';lastGeneration.quality=d;
+    }catch(e){$('qualityState').textContent='Analysis failed';$('qualityState').className='status offline';alert(e.message)}finally{$('qualityBtn').disabled=false}
+  };
+})();
