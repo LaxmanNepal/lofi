@@ -2,13 +2,14 @@
 
 Original-first Nepali music creation system for **Laxman Lofi**.
 
-## V3.6 — Story → Lyrics → Music → Master → Stems → Mix → Cover → Video → Lyric Video → ASR Sync → Reviewed Sync → Quality Check → SEO → ZIP
+## V3.7 — Story → Lyrics → Music → Stems → Vocal Enhance → Mix → Master → Cover → Video → Lyric Video → ASR Sync → Reviewed Sync → Quality Check → SEO → ZIP
 
 - **Frontend:** static, mobile-first web app in `web/`
 - **Lyric AI:** local Hugging Face Transformers model
 - **Music engine:** ACE-Step v1 3.5B
 - **Audio production:** FFmpeg mastering
 - **Vocal + instrumental separation:** Demucs `htdemucs` on demand
+- **Vocal enhancement:** deterministic FFmpeg DSP for noise reduction, room/reverb control, breath dynamics, presence and de-essing-style processing
 - **Mix + master:** automatic FFmpeg DSP for stem balance, vocal cleanup, EQ, compression, de-essing-style control, stereo width and loudness normalization
 - **Vocal controls:** vocal level, instrumental level and vocal pan, with custom-mix WAV export
 - **Cover art:** optional local SDXL generation on the Colab GPU
@@ -22,7 +23,17 @@ Original-first Nepali music creation system for **Laxman Lofi**.
 - **Reusable presets:** Pardeshi, Romantic, Rainy Night and Nepal Atmosphere, plus custom browser-saved presets
 - **Batch generation:** up to 20 stories, processed sequentially to avoid concurrent GPU overload
 - **Cloud runner:** Google Colab notebook in `backend/`
-- **API:** `/compose`, `/generate`, `/master`, `/stems`, `/stem-mix`, `/mix-master`, `/seo`, `/cover`, `/video`, `/lyric-timing`, `/lyric-video`, `/package`, `/audio/{file_name}`
+- **API:** `/compose`, `/generate`, `/master`, `/stems`, `/stem-mix`, `/vocal-enhance`, `/mix-master`, `/seo`, `/cover`, `/video`, `/lyric-timing`, `/lyric-video`, `/package`, `/audio/{file_name}`
+
+### V3.7 Vocal Enhancement workflow
+
+1. Generate the vocal song and run **Vocal + Stem Studio**.
+2. Open **Vocal Enhancement & Repair Studio**.
+3. Adjust noise reduction, room/reverb control, breath dynamics, presence and de-essing.
+4. Render the enhanced 44.1 kHz 24-bit vocal WAV.
+5. Use the resulting vocal as the cleaned source for your mix/master workflow and listen for artifacts.
+
+V3.7 uses deterministic FFmpeg spectral and dynamic processing. It is intentionally not described as a generative AI voice enhancer. Strong settings can introduce pumping, dullness or other artifacts, so the enhanced stem should be auditioned before release.
 
 ### V3.6 Mix & Master workflow
 
@@ -35,30 +46,13 @@ Original-first Nepali music creation system for **Laxman Lofi**.
 
 V3.6 is intentionally deterministic DSP rather than a generative model. This keeps the workflow reproducible and avoids adding another large model dependency.
 
-### V3.5 audio quality workflow
-
-After generating or mastering a song, open **Audio Quality Studio** and run the automated inspection. The report shows loudness, peak, duration and long-silence metrics plus pass/review checks. When a V3.5 server endpoint is available it uses FFmpeg `ebur128` and `silencedetect`; otherwise the browser performs an approximate Web Audio RMS/peak analysis without requiring another dependency.
-
-Automated checks are production aids, not a substitute for listening on headphones and speakers. Loudness reported by the browser fallback is approximate.
-
-### V3.4 reviewed lyric-video workflow
-
-1. Generate the vocal song.
-2. Open **Exact Lyric Sync Studio** and run faster-whisper timing.
-3. Review/edit every start, end and lyric line.
-4. Click **Apply Timing** to keep the reviewed rows in the current generation.
-5. In **Final Synchronized Lyric Video**, choose a theme, karaoke mode and waveform setting.
-6. Render the 1080p MP4. The renderer uses the reviewed timestamps rather than rebuilding proportional timing.
-
-If ASR word timestamps are available, the final karaoke event uses their actual word durations. If a line has no word timestamps, the renderer distributes the line highlight across its reviewed duration. The renderer still validates timing rows and falls back to estimated timing only when no reviewed timing is supplied.
-
 ### Originality / licensing
 
 A model license does not guarantee that every generated output is copyrightable, unique, or free of similarity claims. Use original stories/prompts, review generated lyrics/audio/art/stems/video, avoid requests to imitate named artists or existing songs, and keep generation metadata.
 
 ## Colab
 
-Open `backend/Laxman_Lofi_AI_Studio_Colab.ipynb` in Google Colab with a GPU. FFmpeg is used for mastering, video rendering, lyric-video rendering and V3.6 mix/master processing. Demucs handles stems and faster-whisper handles optional ASR timing.
+Open `backend/Laxman_Lofi_AI_Studio_Colab.ipynb` in Google Colab with a GPU. FFmpeg is used for mastering, video rendering, lyric-video rendering, V3.6 mix/master processing and V3.7 vocal enhancement. Demucs handles stems and faster-whisper handles optional ASR timing.
 
 For a permanent production service, use a GPU host you control and protect the API with `LAXMAN_LOFI_API_KEY`.
 
@@ -82,3 +76,4 @@ Host `web/` at `https://apps.laxmannepal.com.np/laxman-lofi/`.
 - V3.4: synchronized lyric-video rendering using reviewed timestamps ✅
 - V3.5: audio quality studio + pre-publish checks ✅
 - V3.6: automatic mix + master studio ✅
+- V3.7: vocal enhancement & repair studio ✅
