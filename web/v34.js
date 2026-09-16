@@ -21,4 +21,5 @@
       const src=`data:${d.mime_type};base64,${d.video_base64}`; $('v34Preview').src=src; $('v34Preview').style.display='block'; $('v34Download').href=src; $('v34Download').download=d.file_name; $('v34Actions').classList.remove('hidden'); $('v34State').textContent=`Rendered ✓ · ${d.lines} lines · ${d.timing_source}`;
     }catch(e){$('v34State').textContent='Render failed';alert(e.message)}finally{b.disabled=false;b.textContent='Render synchronized video'}
   };
+  const q=document.createElement('script');q.src='./v35.js';document.body.appendChild(q);
 })();
